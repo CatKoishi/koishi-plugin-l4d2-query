@@ -24,7 +24,13 @@
       ]
     }
   },
-  "license": "MIT",
+  "author": {
+    "name": "NyaKoishi",
+    "email": "nyakoishi@qq.com",
+    "url": "https://github.com/CatKoishi"
+  },
+  "homepage": "https://github.com/CatKoishi/koishi-plugin-l4d2-query",
+  "license": "GPL-3.0-only",
   "scripts": {},
   "keywords": [
     "chatbot",
