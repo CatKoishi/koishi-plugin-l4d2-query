@@ -10,6 +10,7 @@ import path from 'node:path';
 
 import { SourceQuerySocket } from 'source-server-query';
 import mysql from 'mysql2/promise';
+import Rcon from 'rcon-srcds';
 
 import { Info, Player } from './types/a2s';
 import { secondFormat, time2Read } from './utils/timeFormat';
@@ -36,7 +37,9 @@ export interface Config {
   servList?: {
     ip: string
     port: number
-    enable: boolean
+    rconEnable: boolean
+    rconPort: number
+    rconPassword: string
   }[],
   steamWebApi?: string;
   useProxy?: boolean;
@@ -54,7 +57,9 @@ export const Config: Schema<Config> = Schema.intersect([
     servList: Schema.array(Schema.object({
       ip: Schema.string().pattern(/^((2(5[0-5]|[0-4]\d))|[0-1]?\d{1,2})(\.((2(5[0-5]|[0-4]\d))|[0-1]?\d{1,2})){3}$/).default('8.8.8.8'),
       port: Schema.number().default(27015).min(10).max(65535),
-      enable: Schema.boolean().default(true),
+      rconEnable: Schema.boolean().default(false),
+      rconPort: Schema.number().default(27015).min(10).max(65535),
+      rconPassword: Schema.string().role('secret')
     })).role('table'),
   }),
 
@@ -296,8 +301,37 @@ export function apply(ctx: Context, config: Config) {
       return '找不到qwq'
     }
 
-  }) 
+  })
 
+  ctx.command('rcon <server:string> <cmd:text>', '使用Rcon控制服务器', { authority: 4 })
+  .usage('rcon ?f cmd')
+  .example('rcon 2f status 连接订阅的服务器2并发送status指令')
+  .action( async ({session}, server, cmd) => {
+    const regServ = /^[1-9]\d*f$/;
+    if(!regServ.test(server))
+      return '请检查服务器编号是否为：数字f'
+
+    const sp = server.split('f');
+    let index:number = Number(sp[0]);
+    const maxServNum = config.servList.length;
+
+    if(index > maxServNum || index < 1)
+      return '没有这个服务器呢'
+    if(config.servList[index-1].rconEnable === false)
+      return '该服务器未开启RCON功能！'
+
+    const remote = new Rcon({host: config.servList[index-1].ip, port: config.servList[index-1].rconPort, encoding: 'utf8'});
+    try {
+      await remote.authenticate(config.servList[index-1].rconPassword);
+      let status = await remote.execute(cmd);
+      session.send(`指令执行成功\r\n${status}`);
+      remote.disconnect();
+    } catch(error) {
+      logger.error(`[l4d2 Error]:\r\n`+error);
+      return 'rcon连不上喵qwq'
+    }
+
+  })
 }
 
 function checkIpValid(ip:string)

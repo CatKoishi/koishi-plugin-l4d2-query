@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-l4d2-query",
   "description": "manage your l4d2 server",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -11,8 +11,8 @@
   "koishi": {
     "browser": true,
     "description": {
-      "en": "l4d2 server query",
-      "zh": "求生之路服务器查询.订阅.搜索, Anne数据库查询, 基于[wahaha216的a2s插件](/market?keyword=a2s)开发, 样式参照Agnes4m的查询插件"
+      "en": "l4d2 server manage",
+      "zh": "求生之路服务器查询.订阅.搜索.管理, Anne数据库查询, 基于[@wahaha216/a2s](/market?keyword=a2s), 参照[Agnes4m的查询插件](https://github.com/Agnes4m/nonebot_plugin_l4d2_server)"
     },
     "service": {
       "required": [
@@ -30,6 +30,10 @@
     "url": "https://github.com/CatKoishi"
   },
   "homepage": "https://github.com/CatKoishi/koishi-plugin-l4d2-query",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CatKoishi/koishi-plugin-l4d2-query"
+  },
   "license": "GPL-3.0-only",
   "scripts": {},
   "keywords": [
@@ -44,6 +48,7 @@
   },
   "dependencies": {
     "source-server-query": "^3.0.3",
+    "rcon-srcds": "^2.1.0",
     "mysql2": "^3.11.3"
   }
 }

@@ -5,7 +5,7 @@
     <img width="160" src="https://koishi.chat/logo.png" alt="logo">
   </a>
   </a>
-<h3 align="center">koishi-plugin-jrys-max</h3>
+<h3 align="center">koishi-plugin-l4d2-query</h3>
 
 [![npm](https://img.shields.io/npm/v/koishi-plugin-l4d2-query?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-l4d2-query)
 </div>
@@ -23,6 +23,7 @@
 - [x] 一键输出订阅的服务器信息
 - [x] 寻找包含特定tag的服务器列表
 - [x] 查询Anne药役玩家数据
+- [x] 使用RCON管理服务器
 
 > 注意: Anne官方数据库不开放，此插件仅提供查询方法，不提供数据库
 
@@ -36,6 +37,7 @@
 - 使用 `服务器` 指令查询订阅的服务器信息
 - 使用 `找服玩 可选项` 指令查找服务器列表 **[ 需要API KEY ]**
 - 使用 `Anne查询 游戏昵称` 指令查询Anne数据库信息 **需要数据库账号密码**
+- 使用 `rcon ?f command` 管理远程服务器
 
 更多说明请使用help指令获取
 
@@ -68,3 +70,6 @@
 `0.4.1`
 完善 找服玩 功能\
 添加 GitHub 链接与联系方式
+
+`0.5.0`
+增加RCON远程管理服务器功能

@@ -3,7 +3,9 @@ servList:
   $value:
     ip: 服务器IP
     port: 端口
-    enable: 启用
+    rconEnable: 启用Rcon
+    rconPort: Rcon端口
+    rconPassword: Rcon密码
 steamWebApi:
   $description: 点击[->此处<-](https://steamcommunity.com/dev/apikey)获取
 useProxy:
