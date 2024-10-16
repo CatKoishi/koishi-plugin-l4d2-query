@@ -1,0 +1,24 @@
+servList:
+  $description: 自定义服务器列表
+  $value:
+    ip: 服务器IP
+    port: 端口
+    enable: 启用
+steamWebApi:
+  $description: 点击[->此处<-](https://steamcommunity.com/dev/apikey)获取
+useProxy:
+  $description: 连接Steam API是否使用代理
+proxyAddress:
+  $description: 代理链接
+useAnne:
+  $description: 启用Anne数据查询功能
+dbIp:
+  $description: 数据库IP
+dbPort:
+  $description: 数据库端口( 3306 )
+dbUser:
+  $description: 数据库用户名
+dbPassword:
+  $description: 数据库密码
+dbName:
+  $description: 数据库名( l4d2stats )
