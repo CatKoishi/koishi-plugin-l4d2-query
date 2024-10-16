@@ -199,26 +199,50 @@ export function apply(ctx: Context, config: Config) {
   });
 
 
-  ctx.command('找服玩 <tag:string>', '找求生服')
-  .option('notEmpty', '-e', {fallback: true})  // 没做
-  .option('notFull', '-f', {fallback: true})  // 没做
-  .option('maxQuery', '-n <max:number>', {fallback: 5})
-  .option('region', '-r <max:number>', {fallback: null})  //没做
-  .usage('后面加服务器tag以及可选项')
-  .example('找服玩 anne -n 10 --> 返回最多10个tag含有“anne”的服务器')
-  .action(async ({session, options}, servTag) => {
-    
+  ctx.command('找服玩', '找求生服')
+  .option('servName', '-n <name:string>')
+  .option('servIp', '-i <ip:string>')
+  .option('servTag', '-t <tag:string>')
+  .option('isEmpty', '-e', {fallback: false})  // 是否空服
+  .option('region', '-r <region:number>', {fallback: null})  //没做
+  .option('maxQuery', '-m <max:number>', {fallback: 5})
+  .usage('后面加可选项 -n+服务器名称, *可做通配符; -i+服务器IP; -t+服务器tag; -e 寻找空服; -r+地区代码; -m+查询数量')
+  .example('找服玩 anne -m 10 --> 返回最多10个tag含有“anne”的服务器')
+  .action(async ({session, options}, _) => {
+
     if(!config.steamWebApi)
       return '请设置Steam API Key'
 
-    const servUrl = `https://api.steampowered.com/IGameServersService/GetServerList/v1/?key=${config.steamWebApi}&filter=appid\\550\\empty\\1\\gametype\\${servTag}&limit=${options.maxQuery}`;
+    const qUrlPre:string = `https://api.steampowered.com/IGameServersService/GetServerList/v1/?key=${config.steamWebApi}`;
+    const qUrlSuf:string = `&limit=${options.maxQuery}`
+    let qUrlFilter:string = '&filter=appid\\550'
+
+    // 3个主要查询条件
+    if('servTag' in options)
+      qUrlFilter = qUrlFilter.concat(`\\gametype\\${options.servTag}`);
+    if('servName' in options)
+      qUrlFilter = qUrlFilter.concat(`\\name_match\\${options.servName}`);
+    if('servIp' in options)
+      qUrlFilter = qUrlFilter.concat(`\\gameaddr\\${options.servIp}`);
+
+    // 2个可选查询条件
+    if(options.isEmpty) {
+      qUrlFilter = qUrlFilter.concat('\\noplayers\\1');
+    } else {
+      qUrlFilter = qUrlFilter.concat('\\empty\\1');
+    }
+    if(options.region)
+      qUrlFilter = qUrlFilter.concat(`\\region\\${options.region}`);
+
+    const qUrl = qUrlPre+qUrlFilter+qUrlSuf;
+
     try{
       let qResponse;
       if(config.useProxy) {
-        qResponse = await ctx.http.get(servUrl, { proxyAgent: config.proxyAddress });
+        qResponse = await ctx.http.get(qUrl, { proxyAgent: config.proxyAddress });
       }
       else {
-        qResponse = await ctx.http.get(servUrl);
+        qResponse = await ctx.http.get(qUrl);
       }
 
       const result = h("figure");
