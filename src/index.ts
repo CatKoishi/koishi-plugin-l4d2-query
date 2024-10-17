@@ -12,14 +12,13 @@ import { SourceQuerySocket } from 'source-server-query';
 import mysql from 'mysql2/promise';
 import Rcon from 'rcon-srcds';
 
-import { Info, Player } from './types/a2s';
+import { Info, Player, QueryServerInfo } from './types/a2s';
 import { secondFormat, time2Read } from './utils/timeFormat';
 
 export const name = 'l4d2-query'
 // ToDo
 // 指令开启或关闭
 // 代码安全性提升
-// 支持使用rcon控制服务器
 // 制作VTF
 
 export const inject = {
@@ -112,22 +111,16 @@ export function apply(ctx: Context, config: Config) {
     }
     
     var index:number;
-    const query: SourceQuerySocket = new SourceQuerySocket();
-    
-    let info: Info | void;
-    info = await query.info(ip, port);
-    let players: Player[] | void;
-    players = await query.players(ip, port);
+    const { code, info, players } = await queryServerInfo(ip, port);
 
-    if (info && players) {
+    if (code === 0) {
       const servInfo = h('message',
         h('p', `名称：${info.name}`),
         h('p', `地图：${info.map}`),
         h('p', `玩家：${info.players}/${info.max_players}`)
       );
       
-      for(index = 0; index < info.players; index++)
-      {
+      for(index = 0; index < info.players; index++) {
         servInfo.children.push( h('p', `[${players[index].score}] | ${secondFormat(players[index].duration)} | ${players[index].name}`) );
       }
       await session.send(servInfo);
@@ -145,32 +138,41 @@ export function apply(ctx: Context, config: Config) {
     if(!maxServNum)
       return '好像，还没有订阅服务器呢~'
 
-    try{
+    try {
       let templateHTML = fs.readFileSync(path.resolve(__dirname, "./html/template.txt"), "utf-8");
       let templateCELL = fs.readFileSync(path.resolve(__dirname, "./html/cell.txt"), "utf-8");
       let workhtml = templateHTML;
 
       var index:number;
-      const query: SourceQuerySocket = new SourceQuerySocket();
-      
-      let info: Info | void;
-      let players: Player[] | void;
 
-      for(index=0; index<maxServNum; index++)
-      {
-        info = await query.info(config.servList[index].ip, config.servList[index].port);
-        players = await query.players(config.servList[index].ip, config.servList[index].port);
-        workhtml = workhtml
-        .replace("<!-- ##{SERVER_CELL}## -->", templateCELL)
-        .replace("#{ServerName}#", `${index+1}. ${info.name}`)
-        .replace("#{MapName}#", info.map)
-        .replace("#{Player1}#", (players[0] === undefined)? " ":`${players[0].name} | ${secondFormat(players[0].duration)}`)
-        .replace("#{Player2}#", (players[1] === undefined)? " ":`${players[1].name} | ${secondFormat(players[1].duration)}`)
-        .replace("#{Player3}#", (players[2] === undefined)? " ":`${players[2].name} | ${secondFormat(players[2].duration)}`)
-        .replace("#{Player4}#", (players[3] === undefined)? " ":`${players[3].name} | ${secondFormat(players[3].duration)}`)
-        .replace("#{PlayerNum}#", info.players.toString())
-        .replace("#{MaxPlayer}#", info.max_players.toString())
-        .replace("#{SVG}#", info.environment === "l"? "l.svg":"w.svg")
+      for(index=0; index<maxServNum; index++) {
+        const { code, info, players } = await queryServerInfo(config.servList[index].ip, config.servList[index].port);
+        if(code === 0) {
+          workhtml = workhtml
+          .replace("<!-- ##{SERVER_CELL}## -->", templateCELL)
+          .replace("#{ServerName}#", `${index+1}. ${info.name}`)
+          .replace("#{MapName}#", info.map)
+          .replace("#{Player1}#", (players[0] === undefined)? " ":`${players[0].name} | ${secondFormat(players[0].duration)}`)
+          .replace("#{Player2}#", (players[1] === undefined)? " ":`${players[1].name} | ${secondFormat(players[1].duration)}`)
+          .replace("#{Player3}#", (players[2] === undefined)? " ":`${players[2].name} | ${secondFormat(players[2].duration)}`)
+          .replace("#{Player4}#", (players[3] === undefined)? " ":`${players[3].name} | ${secondFormat(players[3].duration)}`)
+          .replace("#{PlayerNum}#", info.players.toString())
+          .replace("#{MaxPlayer}#", info.max_players.toString())
+          .replace("#{SVG}#", `${info.environment}.svg`)
+        } else {
+          workhtml = workhtml
+          .replace("<!-- ##{SERVER_CELL}## -->", templateCELL)
+          .replace("#{ServerName}#", `${index+1}. 无响应`)
+          .replace("#{MapName}#", " ")
+          .replace("#{Player1}#", " ")
+          .replace("#{Player2}#", " ")
+          .replace("#{Player3}#", " ")
+          .replace("#{Player4}#", " ")
+          .replace("#{PlayerNum}#", "0")
+          .replace("#{MaxPlayer}#", "0")
+          .replace("#{SVG}#", "u.svg")
+        }
+
       }
 
       fs.writeFileSync(path.resolve(__dirname, "./html/index.html"), workhtml);
@@ -198,13 +200,13 @@ export function apply(ctx: Context, config: Config) {
       
     } catch(error) {
       logger.error(`[l4d2 Error]:\r\n`+error);
-      return '哪里出的问题！md跟你爆了'
+      return '出错了ww'
     }
     
   });
 
 
-  ctx.command('找服玩', '找求生服')
+  ctx.command('找服', '找求生服')
   .option('servName', '-n <name:string>')
   .option('servIp', '-i <ip:string>')
   .option('servTag', '-t <tag:string>')
@@ -240,31 +242,32 @@ export function apply(ctx: Context, config: Config) {
       qUrlFilter = qUrlFilter.concat(`\\region\\${options.region}`);
 
     const qUrl = qUrlPre+qUrlFilter+qUrlSuf;
+    let qResponse;
 
-    try{
-      let qResponse;
+    try {
       if(config.useProxy) {
         qResponse = await ctx.http.get(qUrl, { proxyAgent: config.proxyAddress });
-      }
-      else {
+      } else {
         qResponse = await ctx.http.get(qUrl);
       }
-
-      const result = h("figure");
-      for( const serv of qResponse.response.servers) {
-        const iServName:string = serv.name;
-        const iServIP:string = serv.addr;
-        const iServMap:string = serv.map;
-        const iServPlayer:number = serv.players;
-        const iServMaxP:number = serv.max_players;
-        result.children.push(h("message", `${iServName}  ${iServMap}  ${iServPlayer}/${iServMaxP}\r\nsteam://connect/${iServIP}`));
-      }
-      await session.send(result);
-
     } catch (error) {
       logger.error(`[l4d2 Error]:\r\n`+error);
-      return '出错啦！网络不太好? 代理没有正确设置? 或者没有搜索到任何服务器！'
+      return '网络错误！'
     }
+
+    if(qResponse.response.servers === undefined)
+      return '未找到符合条件的服务器'
+
+    const result = h("figure");
+    for( const serv of qResponse.response.servers) {
+      const iServName:string = serv.name;
+      const iServIP:string = serv.addr;
+      const iServMap:string = serv.map;
+      const iServPlayer:number = serv.players;
+      const iServMaxP:number = serv.max_players;
+      result.children.push(h("message", `${iServName}  ${iServMap}  ${iServPlayer}/${iServMaxP}\r\nsteam://connect/${iServIP}`));
+    }
+    await session.send(result);
 
   });
 
@@ -298,7 +301,7 @@ export function apply(ctx: Context, config: Config) {
       
     } catch (error) {
       logger.error(`[l4d2 Error]:\r\n`+error);
-      return '找不到qwq'
+      return '找不到qwq, 是不是输错啦?'
     }
 
   })
@@ -309,7 +312,7 @@ export function apply(ctx: Context, config: Config) {
   .action( async ({session}, server, cmd) => {
     const regServ = /^[1-9]\d*f$/;
     if(!regServ.test(server))
-      return '请检查服务器编号是否为：数字f'
+      return '请检查服务器编号是否为：编号f (12f)'
 
     const sp = server.split('f');
     let index:number = Number(sp[0]);
@@ -330,7 +333,6 @@ export function apply(ctx: Context, config: Config) {
       logger.error(`[l4d2 Error]:\r\n`+error);
       return 'rcon连不上喵qwq'
     }
-
   })
 }
 
@@ -340,3 +342,30 @@ function checkIpValid(ip:string)
   return ipReg.test(ip);
 }
 
+
+const queryServerInfo: QueryServerInfo = async (ip, port) => {
+  const query: SourceQuerySocket = new SourceQuerySocket();
+  let errMsg: Error;
+  const info = await query.info(ip, port).catch((err) => {
+    logger.error(err);
+    errMsg = err;
+  });
+
+  let players: Player[] | void;
+  if (!errMsg) {
+    players = await query.players(ip, port).catch((err) => {
+      logger.error(err);
+      errMsg = err;
+    });
+  }
+  if (errMsg) {
+    return { code: 1, info: null, players: null, errMsg };
+  } else {
+    return {
+      code: 0,
+      info: info as Info,
+      players: players as Player[],
+      errMsg: null,
+    };
+  }
+};
