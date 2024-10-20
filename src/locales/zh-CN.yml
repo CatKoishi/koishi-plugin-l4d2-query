@@ -1,3 +1,13 @@
+themeType:
+  $description: 主题样式
+nightMode:
+  $description: 自动夜间模式
+nightConfig:
+  $description: 自定义夜间模式
+  $value:
+    nightStart: 开启时间
+    nightEnd: 结束时间
+    nightOLED: 启用OLED夜间主题
 servList:
   $description: 自定义服务器列表
   $value:

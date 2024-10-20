@@ -23,7 +23,6 @@ export const name = 'l4d2-query'
 
 export const inject = {
   "required": [
-    "canvas",
     "puppeteer",
     "logger",
     "http"
@@ -40,18 +39,41 @@ export interface Config {
     rconPort: number
     rconPassword: string
   }[],
-  steamWebApi?: string;
-  useProxy?: boolean;
-  proxyAddress?: string;
-  useAnne?: boolean;
-  dbIp?: string;
-  dbPort?: number;
-  dbUser?: string;
-  dbPassword?: string;
-  dbName?: string;
+  steamWebApi?: string,
+  useProxy?: boolean,
+  proxyAddress?: string,
+  useAnne?: boolean,
+  dbIp?: string,
+  dbPort?: number,
+  dbUser?: string,
+  dbPassword?: string,
+  dbName?: string,
+  themeType?: string
+  nightMode?: boolean
+  nightConfig?: {
+    nightStart: number
+    nightEnd: number
+    nightOLED: boolean
+  },
 }
 
 export const Config: Schema<Config> = Schema.intersect([
+  Schema.object({
+    themeType: Schema.union(['Normal', 'Dark', 'Neon', 'Wind']).default('Normal').experimental(),
+    nightMode: Schema.boolean().default(false).experimental(),
+  }),
+  Schema.union([
+    Schema.object({
+      nightMode: Schema.const(true).required(),
+      nightConfig: Schema.array(Schema.object({
+        nightStart: Schema.number().default(21).min(17).max(23),
+        nightEnd: Schema.number().default(7).min(5).max(15),
+        nightOLED: Schema.boolean().default(false),
+      })).min(1).max(1).role('table'),
+    }),
+    Schema.object({}),
+  ]),
+  
   Schema.object({
     servList: Schema.array(Schema.object({
       ip: Schema.string().pattern(/^((2(5[0-5]|[0-4]\d))|[0-1]?\d{1,2})(\.((2(5[0-5]|[0-4]\d))|[0-1]?\d{1,2})){3}$/).default('8.8.8.8'),
@@ -90,6 +112,19 @@ export const Config: Schema<Config> = Schema.intersect([
   ]),
 ]).i18n({ 'zh-CN': require('./locales/zh-CN') });
 
+// themeBG : themeColor : themeInner : themeBorder
+const themeMap = new Map([
+  ["Normal", "#FFFFFF:#000000:#F5F6F7:#E5E7EB"],
+  ["Dark",   "#1F1F1F:#DDDDDD:#0B0B0B:#3E3E3E"],
+  ["Neon",   "#FFFFFF:#000000:#F5F6F7:#E5E7EB"],
+  ["Wind",   "#FFFFFF:#000000:#F5F6F7:#E5E7EB"],
+  ["OLED",   "#000000:#D6D6D6:#000000:#1F1F1F"],
+]);
+
+
+
+
+
 
 export function apply(ctx: Context, config: Config) {
   // write your plugin here
@@ -110,23 +145,8 @@ export function apply(ctx: Context, config: Config) {
       }
     }
     
-    var index:number;
     const { code, info, players } = await queryServerInfo(ip, port);
-
-    if (code === 0) {
-      const servInfo = h('message',
-        h('p', `名称：${info.name}`),
-        h('p', `地图：${info.map}`),
-        h('p', `玩家：${info.players}/${info.max_players}`)
-      );
-      
-      for(index = 0; index < info.players; index++) {
-        servInfo.children.push( h('p', `[${players[index].score}] | ${secondFormat(players[index].duration)} | ${players[index].name}`) );
-      }
-      await session.send(servInfo);
-    } else {
-      await session.send(h.text("服务器无响应"));
-    }
+    session.send( servInfo2Text(code, info, players) );
   })
   
 
@@ -172,9 +192,33 @@ export function apply(ctx: Context, config: Config) {
           .replace("#{MaxPlayer}#", "0")
           .replace("#{SVG}#", "u.svg")
         }
-
       }
 
+      if ( maxServNum === 1 ) {
+        workhtml = workhtml.replace("#{cellArrange}#", "auto");
+      } else if ( maxServNum === 2 ) {
+        workhtml = workhtml.replace("#{cellArrange}#", "auto auto");
+      } else {
+        workhtml = workhtml.replace("#{cellArrange}#", "auto auto auto");
+      }
+      const date = new Date();
+      let theme:string[];
+      if ( config.nightMode && (date.getHours() >= config.nightConfig.nightStart || date.getHours() <= config.nightConfig.nightEnd) ) {
+        if ( config.nightConfig.nightOLED ) {
+          theme = themeMap.get("OLED").split(':');
+        } else {
+          theme = themeMap.get("Dark").split(':');
+        }
+      } else {
+        theme = themeMap.get(config.themeType).split(':');
+      }
+      
+      workhtml = workhtml
+      .replaceAll("#{themeBG}#", theme[0])
+      .replaceAll("#{themeColor}#", theme[1])
+      .replaceAll("#{themeInner}#", theme[2])
+      .replaceAll("#{themeBorder}#", theme[3])
+      
       fs.writeFileSync(path.resolve(__dirname, "./html/index.html"), workhtml);
       
       let pageWidthIndex:number[] = [485, 636, 898];
@@ -204,6 +248,22 @@ export function apply(ctx: Context, config: Config) {
     }
     
   });
+
+  
+  const regexp = /^服务器[1-9]\d*$/;
+  ctx.middleware( async (session, _) => {
+    const input = session.content;
+    if ( regexp.test(input) ) {
+      const index = Number(input.substring(3));
+      const maxServNum = config.servList.length;
+      if( index <= maxServNum ) {
+        const { code, info, players } = await queryServerInfo(config.servList[index-1].ip, config.servList[index-1].port);
+        const output = servInfo2Text(code, info, players);
+        output.children.push( h('p', `connect ${config.servList[index-1].ip}:${config.servList[index-1].port}`));
+        session.send( output );
+      }
+    }
+  })
 
 
   ctx.command('找服', '找求生服')
@@ -306,6 +366,7 @@ export function apply(ctx: Context, config: Config) {
 
   })
 
+
   ctx.command('rcon <server:string> <cmd:text>', '使用Rcon控制服务器', { authority: 4 })
   .usage('rcon ?f cmd')
   .example('rcon 2f status 连接订阅的服务器2并发送status指令')
@@ -369,3 +430,23 @@ const queryServerInfo: QueryServerInfo = async (ip, port) => {
     };
   }
 };
+
+
+function servInfo2Text( code: number, info: Info, players: Player[] ):h {
+  let index:number;
+  let servInfo: h;
+  if (code === 0) {
+    servInfo = h('message',
+      h('p', `名称：${info.name}`),
+      h('p', `地图：${info.map}`),
+      h('p', `玩家：${info.players}/${info.max_players}`)
+    );
+    
+    for(index = 0; index < info.players; index++) {
+      servInfo.children.push( h('p', `[${players[index].score}] | ${secondFormat(players[index].duration)} | ${players[index].name}`) );
+    }
+  } else {
+    servInfo = h.text("服务器无响应");
+  }
+  return servInfo;
+}
