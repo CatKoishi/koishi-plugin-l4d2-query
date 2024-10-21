@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-l4d2-query",
   "description": "manage your l4d2 server",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [

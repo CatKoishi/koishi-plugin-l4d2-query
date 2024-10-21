@@ -221,7 +221,7 @@ export function apply(ctx: Context, config: Config) {
       
       fs.writeFileSync(path.resolve(__dirname, "./html/index.html"), workhtml);
       
-      let pageWidthIndex:number[] = [485, 636, 898];
+      let pageWidthIndex:number[] = [428, 606, 898];
       let pageWidth:number;
       if(maxServNum <= 3)
         pageWidth = pageWidthIndex[maxServNum-1];
@@ -271,9 +271,10 @@ export function apply(ctx: Context, config: Config) {
   .option('servIp', '-i <ip:string>')
   .option('servTag', '-t <tag:string>')
   .option('isEmpty', '-e', {fallback: false})  // 是否空服
+  .option('ignorePlayer', '-a', {fallback: false})  // 不管是否存在玩家
   .option('region', '-r <region:number>', {fallback: null})  //没做
   .option('maxQuery', '-m <max:number>', {fallback: 5})
-  .usage('后面加可选项 -n+服务器名称, *可做通配符; -i+服务器IP; -t+服务器tag; -e 寻找空服; -r+地区代码; -m+查询数量')
+  .usage('后面加可选项 -n+服务器名称, *可做通配符; -i+服务器IP; -t+服务器tag; -a 寻找所有服; -e 寻找空服; -r+地区代码; -m+查询数量')
   .example('找服玩 anne -m 10 --> 返回最多10个tag含有“anne”的服务器')
   .action(async ({session, options}, _) => {
 
@@ -293,10 +294,12 @@ export function apply(ctx: Context, config: Config) {
       qUrlFilter = qUrlFilter.concat(`\\gameaddr\\${options.servIp}`);
 
     // 2个可选查询条件
-    if(options.isEmpty) {
-      qUrlFilter = qUrlFilter.concat('\\noplayers\\1');
-    } else {
-      qUrlFilter = qUrlFilter.concat('\\empty\\1');
+    if (!options.ignorePlayer) {
+      if(options.isEmpty) {
+        qUrlFilter = qUrlFilter.concat('\\noplayers\\1');
+      } else {
+        qUrlFilter = qUrlFilter.concat('\\empty\\1');
+      }
     }
     if(options.region)
       qUrlFilter = qUrlFilter.concat(`\\region\\${options.region}`);
