@@ -17,9 +17,8 @@ import { secondFormat, time2Read } from './utils/timeFormat';
 
 export const name = 'l4d2-query'
 // ToDo
-// 指令开启或关闭
-// 代码安全性提升
-// 制作VTF
+// 代码稳定性提升(待测试)
+// 制作VTF(长期)
 
 export const inject = {
   "required": [
@@ -39,15 +38,18 @@ export interface Config {
     rconPort: number
     rconPassword: string
   }[],
+
+  useSearch?: boolean,
   steamWebApi?: string,
-  useProxy?: boolean,
-  proxyAddress?: string,
+  useProxy?: string | false,
+
   useAnne?: boolean,
   dbIp?: string,
   dbPort?: number,
   dbUser?: string,
   dbPassword?: string,
   dbName?: string,
+
   themeType?: string
   nightMode?: boolean
   nightConfig?: {
@@ -61,7 +63,7 @@ export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
     themeType: Schema.union(['Normal', 'Dark', 'Neon', 'Wind']).default('Normal').experimental(),
     nightMode: Schema.boolean().default(false).experimental(),
-  }),
+  }).description('主题设置'),
   Schema.union([
     Schema.object({
       nightMode: Schema.const(true).required(),
@@ -82,23 +84,26 @@ export const Config: Schema<Config> = Schema.intersect([
       rconPort: Schema.number().default(27015).min(10).max(65535),
       rconPassword: Schema.string().role('secret')
     })).role('table'),
-  }),
+  }).description('服务器订阅'),
 
   Schema.object({
-    steamWebApi: Schema.string(),
-    useProxy: Schema.boolean().default(false),
-  }),
+    useSearch: Schema.boolean().default(false),
+  }).description('找服设置'),
   Schema.union([
     Schema.object({
-      useProxy: Schema.const(true).required(),
-      proxyAddress: Schema.string().default('http://1.1.1.1:7897').required(),
+      useSearch: Schema.const(true).required(),
+      steamWebApi: Schema.string().required(),
+      useProxy: Schema.union([
+        Schema.const(false).description('直连'),
+        Schema.string().default('http://1.1.1.1:7897').description('使用代理')
+      ]),
     }),
     Schema.object({}),
   ]),
 
   Schema.object({
     useAnne: Schema.boolean().default(false),
-  }),
+  }).description('Anne数据库设置'),
   Schema.union([
     Schema.object({
       useAnne: Schema.const(true).required(),
@@ -110,9 +115,12 @@ export const Config: Schema<Config> = Schema.intersect([
     }),
     Schema.object({}),
   ]),
-]).i18n({ 'zh-CN': require('./locales/zh-CN') });
+]).i18n({ 
+  'zh-CN': require('./locales/zh-CN'),
+});
 
-// themeBG : themeColor : themeInner : themeBorder
+
+// themeBG : fontColor : themeInner : themeBorder
 const themeMap = new Map([
   ["Normal", "#FFFFFF:#000000:#F5F6F7:#E5E7EB"],
   ["Dark",   "#1F1F1F:#DDDDDD:#0B0B0B:#3E3E3E"],
@@ -128,7 +136,9 @@ const themeMap = new Map([
 
 export function apply(ctx: Context, config: Config) {
   // write your plugin here
-  ctx.command('connect <ip:string>', '输出服务器信息')
+  ctx.command('l4d2', '查看求生之路指令详情')
+  
+  ctx.command('l4d2/connect <ip:string>', '输出服务器信息')
   .usage('填写IP/域名:端口 无端口号时默认使用27015')
   .example('connect 123.123.123.123:27015')
   .action(async ( {session}, address ) => {
@@ -150,7 +160,7 @@ export function apply(ctx: Context, config: Config) {
   })
   
 
-  ctx.command('服务器', '输出订阅服务器的图片')
+  ctx.command('l4d2/服务器', '输出订阅服务器的图片')
   .action(async ({session}, ) => {
     const maxServNum = config.servList.length;
     let page: Page;
@@ -265,112 +275,122 @@ export function apply(ctx: Context, config: Config) {
     }
   })
 
-
-  ctx.command('找服', '找求生服')
-  .option('servName', '-n <name:string>')
-  .option('servIp', '-i <ip:string>')
-  .option('servTag', '-t <tag:string>')
-  .option('isEmpty', '-e', {fallback: false})  // 是否空服
-  .option('ignorePlayer', '-a', {fallback: false})  // 不管是否存在玩家
-  .option('region', '-r <region:number>', {fallback: null})  //没做
-  .option('maxQuery', '-m <max:number>', {fallback: 5})
-  .usage('后面加可选项 -n+服务器名称, *可做通配符; -i+服务器IP; -t+服务器tag; -a 寻找所有服; -e 寻找空服; -r+地区代码; -m+查询数量')
-  .example('找服玩 anne -m 10 --> 返回最多10个tag含有“anne”的服务器')
-  .action(async ({session, options}, _) => {
-
-    if(!config.steamWebApi)
-      return '请设置Steam API Key'
-
-    const qUrlPre:string = `https://api.steampowered.com/IGameServersService/GetServerList/v1/?key=${config.steamWebApi}`;
-    const qUrlSuf:string = `&limit=${options.maxQuery}`
-    let qUrlFilter:string = '&filter=appid\\550'
-
-    // 3个主要查询条件
-    if('servTag' in options)
-      qUrlFilter = qUrlFilter.concat(`\\gametype\\${options.servTag}`);
-    if('servName' in options)
-      qUrlFilter = qUrlFilter.concat(`\\name_match\\${options.servName}`);
-    if('servIp' in options)
-      qUrlFilter = qUrlFilter.concat(`\\gameaddr\\${options.servIp}`);
-
-    // 2个可选查询条件
-    if (!options.ignorePlayer) {
-      if(options.isEmpty) {
-        qUrlFilter = qUrlFilter.concat('\\noplayers\\1');
-      } else {
-        qUrlFilter = qUrlFilter.concat('\\empty\\1');
-      }
-    }
-    if(options.region)
-      qUrlFilter = qUrlFilter.concat(`\\region\\${options.region}`);
-
-    const qUrl = qUrlPre+qUrlFilter+qUrlSuf;
-    let qResponse;
-
-    try {
-      if(config.useProxy) {
-        qResponse = await ctx.http.get(qUrl, { proxyAgent: config.proxyAddress });
-      } else {
-        qResponse = await ctx.http.get(qUrl);
-      }
-    } catch (error) {
-      logger.error(`[l4d2 Error]:\r\n`+error);
-      return '网络错误！'
-    }
-
-    if(qResponse.response.servers === undefined)
-      return '未找到符合条件的服务器'
-
-    const result = h("figure");
-    for( const serv of qResponse.response.servers) {
-      const iServName:string = serv.name;
-      const iServIP:string = serv.addr;
-      const iServMap:string = serv.map;
-      const iServPlayer:number = serv.players;
-      const iServMaxP:number = serv.max_players;
-      result.children.push(h("message", `${iServName}  ${iServMap}  ${iServPlayer}/${iServMaxP}\r\nsteam://connect/${iServIP}`));
-    }
-    await session.send(result);
-
-  });
-
+  if(config.useSearch) {
+    ctx.command('l4d2/找服', '找求生服')
+    .option('servName', '-n <name:string>')
+    .option('servIp', '-i <ip:string>')
+    .option('servTag', '-t <tag:string>')
+    .option('isEmpty', '-e', {fallback: false})  // 是否空服
+    .option('ignorePlayer', '-a', {fallback: false})  // 不管是否存在玩家
+    .option('region', '-r <region:number>', {fallback: null})  //没做
+    .option('maxQuery', '-m <max:number>', {fallback: 5})
+    .usage('后面加可选项 -n+服务器名称, *可做通配符; -i+服务器IP; -t+服务器tag; -a 寻找所有服; -e 寻找空服; -r+地区代码; -m+查询数量')
+    .example('找服玩 anne -m 10 --> 返回最多10个tag含有“anne”的服务器')
+    .action(async ({session, options}, _) => {
   
-  ctx.command('Anne查询 <name:text>', '查询玩家Anne服务器信息')
-  .usage('填写游戏内昵称')
-  .example('Anne查询 koishi')
-  .action( async({session}, qName) => {
-
-    const dbConn = await mysql.createConnection({
-      host: config.dbIp,
-      port: config.dbPort,
-      user: config.dbUser,
-      password: config.dbPassword,
-      database: config.dbName
+      if(!config.steamWebApi)
+        return '请设置Steam API Key'
+  
+      const qUrlPre:string = `https://api.steampowered.com/IGameServersService/GetServerList/v1/?key=${config.steamWebApi}`;
+      const qUrlSuf:string = `&limit=${options.maxQuery}`
+      let qUrlFilter:string = '&filter=appid\\550'
+  
+      // 3个主要查询条件
+      if('servTag' in options)
+        qUrlFilter = qUrlFilter.concat(`\\gametype\\${options.servTag}`);
+      if('servName' in options)
+        qUrlFilter = qUrlFilter.concat(`\\name_match\\${options.servName}`);
+      if('servIp' in options)
+        qUrlFilter = qUrlFilter.concat(`\\gameaddr\\${options.servIp}`);
+  
+      // 2个可选查询条件
+      if (!options.ignorePlayer) {
+        if(options.isEmpty) {
+          qUrlFilter = qUrlFilter.concat('\\noplayers\\1');
+        } else {
+          qUrlFilter = qUrlFilter.concat('\\empty\\1');
+        }
+      }
+      if(options.region)
+        qUrlFilter = qUrlFilter.concat(`\\region\\${options.region}`);
+  
+      const qUrl = qUrlPre+qUrlFilter+qUrlSuf;
+      let qResponse;
+  
+      try {
+        if( config.useProxy === false ) {
+          qResponse = await ctx.http.get(qUrl);
+        } else {
+          qResponse = await ctx.http.get(qUrl, { proxyAgent: config.useProxy });
+        }
+      } catch (error) {
+        logger.error(`[l4d2 Error]:\r\n`+error);
+        return '网络错误！'
+      }
+  
+      if(qResponse.response.servers === undefined)
+        return '未找到符合条件的服务器'
+  
+      const result = h("figure");
+      for( const serv of qResponse.response.servers) {
+        const iServName:string = serv.name;
+        const iServIP:string = serv.addr;
+        const iServMap:string = serv.map;
+        const iServPlayer:number = serv.players;
+        const iServMaxP:number = serv.max_players;
+        result.children.push(h("message", `${iServName}  ${iServMap}  ${iServPlayer}/${iServMaxP}\r\nsteam://connect/${iServIP}`));
+      }
+      await session.send(result);
     });
+  }
+  
 
-    try {
-      const [ result, field ] = await dbConn.execute(
-        `SELECT lastontime,playtime,points FROM players WHERE name = "${qName}"`
-      );
+  if(config.useAnne) {
+    ctx.command('l4d2/Anne查询 <name:text>', '查询玩家Anne服务器信息')
+    .usage('填写游戏内昵称')
+    .example('Anne查询 koishi')
+    .action( async({session}, qName) => {
+  
+      const dbConn = await mysql.createConnection({
+        host: config.dbIp,
+        port: config.dbPort,
+        user: config.dbUser,
+        password: config.dbPassword,
+        database: config.dbName
+      });
+  
+      try {
+        // MySQL5 NOT support RANK() function
+        // SELECT lastontime,playtime,points,steamid,myrank FROM (SELECT lastontime,playtime,name,steamid,points,RANK() OVER (ORDER BY points DESC) AS myrank FROM players) AS tb1 WHERE name = "${qName}"
+        const [ players, field0 ] = await dbConn.execute(
+          `SELECT lastontime,playtime,name,steamid,points FROM players WHERE name = "${qName}"`
+        );
+        const [ rpg, field1 ] = await dbConn.execute(
+          `SELECT CHATTAG FROM rpg WHERE steamid = "${players[0].steamid}"`
+        );
+        const date = new Date(players[0].lastontime*1000);
+        let anneInfo: h = h('message');
+        if( rpg[0].CHATTAG != null ) {
+          anneInfo.children.push( h('p', `玩家：[${rpg[0].CHATTAG}]${qName}`) );
+        } else {
+          anneInfo.children.push( h('p', `玩家：${qName}`) );
+        }
+        anneInfo.children.push(
+          h('p', `分数：${players[0].points}`),
+          h('p', `游玩时间：${time2Read(players[0].playtime*60)}`),
+          h('p', `最后上线：${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()}`)
+        );
+        session.send(anneInfo);
+        
+      } catch (error) {
+        logger.error(`[l4d2 Error]:\r\n`+error);
+        return '找不到qwq, 是不是输错啦?'
+      }
+    })
+  }
 
-      const date = new Date(result[0].lastontime*1000);
-      const anneInfo = h('message',
-        h('p', `玩家：${qName}`),
-        h('p', `分数：${result[0].points}`),
-        h('p', `游玩时间：${time2Read(result[0].playtime*60)}`),
-        h('p', `最后上线：${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()}`)
-      );
-      session.send(anneInfo);
-      
-    } catch (error) {
-      logger.error(`[l4d2 Error]:\r\n`+error);
-      return '找不到qwq, 是不是输错啦?'
-    }
 
-  })
-
-
-  ctx.command('rcon <server:string> <cmd:text>', '使用Rcon控制服务器', { authority: 4 })
+  ctx.command('l4d2/rcon <server:string> <cmd:text>', '使用Rcon控制服务器', { authority: 4 })
   .usage('rcon ?f cmd')
   .example('rcon 2f status 连接订阅的服务器2并发送status指令')
   .action( async ({session}, server, cmd) => {

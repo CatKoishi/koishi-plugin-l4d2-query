@@ -1,36 +1,38 @@
-themeType:
-  $description: 主题样式
-nightMode:
-  $description: 自动夜间模式
-nightConfig:
-  $description: 自定义夜间模式
-  $value:
-    nightStart: 开启时间
-    nightEnd: 结束时间
-    nightOLED: 启用OLED夜间主题
-servList:
-  $description: 自定义服务器列表
-  $value:
-    ip: 服务器IP
-    port: 端口
-    rconEnable: 启用Rcon
-    rconPort: Rcon端口
-    rconPassword: Rcon密码
-steamWebApi:
-  $description: 点击[->此处<-](https://steamcommunity.com/dev/apikey)获取
-useProxy:
-  $description: 连接Steam API是否使用代理
-proxyAddress:
-  $description: 代理链接
-useAnne:
-  $description: 启用Anne数据查询功能
-dbIp:
-  $description: 数据库IP
-dbPort:
-  $description: 数据库端口( 3306 )
-dbUser:
-  $description: 数据库用户名
-dbPassword:
-  $description: 数据库密码
-dbName:
-  $description: 数据库名( l4d2stats )
+- themeType:
+    $desc: 主题样式
+    $inner:
+      - 正常
+      - 黑暗
+      - 霓虹x
+      - 清风x
+  nightMode: 自动夜间模式
+- nightConfig:
+    $desc: 自定义夜间模式
+    $value:
+      nightStart: 开启时间
+      nightEnd: 结束时间
+      nightOLED: 启用OLED夜间主题
+
+- servList:
+    $desc: 自定义服务器列表
+    $value:
+      ip: 服务器IP
+      port: 端口
+      rconEnable: 启用Rcon
+      rconPort: Rcon端口
+      rconPassword: Rcon密码
+
+- useSearch: 启用找服功能
+- steamWebApi: 点击[->此处<-](https://steamcommunity.com/dev/apikey)获取
+  useProxy:
+    $desc: 连接Steam API是否使用代理
+    $inner:
+      - 直连
+      - 使用代理
+
+- useAnne: 启用Anne数据查询功能
+- dbIp: 数据库IP
+  dbPort: 数据库端口( 3306 )
+  dbUser: 数据库用户名
+  dbPassword: 数据库密码
+  dbName: 数据库名( l4d2stats )
