@@ -1,8 +1,8 @@
 import { Context, Schema, h, Session, Logger } from 'koishi'
-import {} from '@cordisjs/plugin-proxy-agent'
 
 import {} from 'koishi-plugin-puppeteer';
 import { Page } from 'puppeteer-core';
+import {} from '@cordisjs/plugin-proxy-agent'
 
 import { promises } from 'node:dns';
 import fs from 'node:fs';
@@ -14,17 +14,52 @@ import Rcon from 'rcon-srcds';
 
 import { Info, Player, QueryServerInfo } from './types/a2s';
 import { secondFormat, time2Read } from './utils/timeFormat';
+import { _L4D2, _Reservation } from './database';
 
 export const name = 'l4d2-query'
+
 // ToDo
-// 代码稳定性提升(待测试)
+// 玩家游戏数据查询, 评分
+// 群车预约, 报名接力
+// 代码稳定性提升(缺少测试)
 // 制作VTF(长期)
+
+// 主键 是否过期 事件名称 事件时间 事件发起人 最大参与者人数 事件参加者 替补参加者
+// 经验评分 = 对抗胜率*(0.55*真实游戏时长+TANK石头命中数*每小时中石头数+T1武器击杀数*0.005*(1+单发霰弹枪击杀在T1武器击杀占比))
+
+export const usage = `
+## 从0.6.2之前旧版本升级需要移除配置后再添加新配置, 否则会有bug
+
+## 求生之路群管理插件
+
+灵感是来源于Agnes4m开发的基于nonebot的求生之路插件, 因为我是恋厨, 所以在部署了Koishi之后, 就想着把这个插件在Koishi上实现出来
+
+## 功能
+
+主要功能是connect查询服务器信息和方便查看群服状态\
+在此之外还添加了Anne查询, 服务器搜索的功能（可以关闭）
+
+配置都有做汉化, 跟着走就行, 基本上就是开箱即用的样子
+
+#### 代理
+找服功能会使用steam api, 使用🪜连接会更加稳定\
+以clash为例, 启动clash后, 需要允许局域网连接, 然后把对应端口的防火墙打开（如果是127.0.0.1则不需要）
+
+#### 数据库
+Anne官方数据库是不开放的, 我自己也不知道的啦\
+如果你不知道怎么搭建Anne数据库, 就请将useAnne选项关闭\
+如果你知道怎么搭建Anne数据库, 那应该也不需要我来解释吧（
+
+## 联系方式
+QQ：1194703727\
+E-mail：nyakoishi@qq.com
+`
 
 export const inject = {
   "required": [
+    "database",
     "puppeteer",
-    "logger",
-    "http"
+    "logger"
   ]
 }
 
@@ -124,20 +159,25 @@ export const Config: Schema<Config> = Schema.intersect([
 const themeMap = new Map([
   ["Normal", "#FFFFFF:#000000:#F5F6F7:#E5E7EB"],
   ["Dark",   "#1F1F1F:#DDDDDD:#0B0B0B:#3E3E3E"],
-  ["Neon",   "#FFFFFF:#000000:#F5F6F7:#E5E7EB"],
+  ["Neon",   "#34405A:#FFFFFF:#222C44:#36507E"],
   ["Wind",   "#FFFFFF:#000000:#F5F6F7:#E5E7EB"],
   ["OLED",   "#000000:#D6D6D6:#000000:#1F1F1F"],
 ]);
 
-
-
-
-
-
 export function apply(ctx: Context, config: Config) {
   // write your plugin here
+  ctx.model.extend('l4d2', {
+    id: 'string',
+    steamid: 'string'
+  })
+
+  ctx.command('test')
+  .action(async ({session}, _) => {
+    console.log(session.userId);
+  })
+
   ctx.command('l4d2', '查看求生之路指令详情')
-  
+
   ctx.command('l4d2/connect <ip:string>', '输出服务器信息')
   .usage('填写IP/域名:端口 无端口号时默认使用27015')
   .example('connect 123.123.123.123:27015')
@@ -166,7 +206,7 @@ export function apply(ctx: Context, config: Config) {
     let page: Page;
 
     if(!maxServNum)
-      return '好像，还没有订阅服务器呢~'
+      return '好像, 还没有订阅服务器呢~'
 
     try {
       let templateHTML = fs.readFileSync(path.resolve(__dirname, "./html/template.txt"), "utf-8");
@@ -285,7 +325,7 @@ export function apply(ctx: Context, config: Config) {
     .option('region', '-r <region:number>', {fallback: null})  //没做
     .option('maxQuery', '-m <max:number>', {fallback: 5})
     .usage('后面加可选项 -n+服务器名称, *可做通配符; -i+服务器IP; -t+服务器tag; -a 寻找所有服; -e 寻找空服; -r+地区代码; -m+查询数量')
-    .example('找服玩 anne -m 10 --> 返回最多10个tag含有“anne”的服务器')
+    .example('找服 anne -m 10 --> 返回最多10个tag含有“anne”的服务器')
     .action(async ({session, options}, _) => {
   
       if(!config.steamWebApi)
@@ -346,11 +386,10 @@ export function apply(ctx: Context, config: Config) {
   
 
   if(config.useAnne) {
-    ctx.command('l4d2/Anne查询 <name:text>', '查询玩家Anne服务器信息')
-    .usage('填写游戏内昵称')
+    ctx.command('l4d2/Anne查询 [name:text]', '查询玩家Anne药役数据')
+    .usage('填写游戏内昵称, 或使用Anne绑定后直接查询')
     .example('Anne查询 koishi')
-    .action( async({session}, qName) => {
-  
+    .action(async ({session}, qName) => {
       const dbConn = await mysql.createConnection({
         host: config.dbIp,
         port: config.dbPort,
@@ -358,25 +397,44 @@ export function apply(ctx: Context, config: Config) {
         password: config.dbPassword,
         database: config.dbName
       });
-  
+      
       try {
-        // MySQL5 NOT support RANK() function
-        // SELECT lastontime,playtime,points,steamid,myrank FROM (SELECT lastontime,playtime,name,steamid,points,RANK() OVER (ORDER BY points DESC) AS myrank FROM players) AS tb1 WHERE name = "${qName}"
-        const [ players, field0 ] = await dbConn.execute(
-          `SELECT lastontime,playtime,name,steamid,points FROM players WHERE name = "${qName}"`
+        let players: mysql.QueryResult;
+        let steamid: string;
+        let name: string;
+        if( qName === undefined ) { // Use SteamID
+          const userid = session.userId;
+          const query = await ctx.database.get('l4d2', {id: userid});
+          if( query[0] == null ) {
+            return '未绑定SteamID, 请输入查询昵称或绑定SteamID'
+          }
+          steamid = query[0].steamid;
+          [ players, ] = await dbConn.execute(
+            `select lastontime,playtime,points,name,rank from (select lastontime,playtime,points,steamid,name,@curRank:=@curRank+1 as rank from players s,(select @curRank:=0) q order by points desc) as tb1 where steamid="${steamid}"`
+          );
+          name = players[0].name;
+        } else { // Use Nickname
+          [ players, ] = await dbConn.execute(
+            `select lastontime,playtime,points,steamid,rank from (select lastontime,playtime,points,steamid,name,@curRank:=@curRank+1 as rank from players s,(select @curRank:=0) q order by points desc) as tb1 where name="${qName}"`
+          );
+          steamid = players[0].steamid;
+          name = qName;
+        }
+        const [ table, ] = await dbConn.execute( // Query Max Players
+          `select table_rows from information_schema.tables where table_schema='${config.dbName}' and table_name='players';`
         );
-        const [ rpg, field1 ] = await dbConn.execute(
-          `SELECT CHATTAG FROM rpg WHERE steamid = "${players[0].steamid}"`
+        const [ rpg, ] = await dbConn.execute( // Query Tag
+          `SELECT CHATTAG FROM rpg WHERE steamid = "${steamid}"`
         );
         const date = new Date(players[0].lastontime*1000);
         let anneInfo: h = h('message');
         if( rpg[0].CHATTAG != null ) {
-          anneInfo.children.push( h('p', `玩家：[${rpg[0].CHATTAG}]${qName}`) );
+          anneInfo.children.push( h('p', `玩家：[${rpg[0].CHATTAG}]${name}`) );
         } else {
-          anneInfo.children.push( h('p', `玩家：${qName}`) );
+          anneInfo.children.push( h('p', `玩家：${name}`) );
         }
         anneInfo.children.push(
-          h('p', `分数：${players[0].points}`),
+          h('p', `分数：${players[0].points}    排名：${players[0].rank}/${table[0].table_rows}`),
           h('p', `游玩时间：${time2Read(players[0].playtime*60)}`),
           h('p', `最后上线：${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()}`)
         );
@@ -387,6 +445,28 @@ export function apply(ctx: Context, config: Config) {
         return '找不到qwq, 是不是输错啦?'
       }
     })
+
+    ctx.command('l4d2/Anne绑定 <steamid:string>', '绑定Anne查询使用的SteamID')
+    .usage('指令后填写您的SteamID')
+    .example('Anne绑定 STEAM_0:1:123456')
+    .action(async ({session}, bindid) => {
+      const regServ = /^STEAM_\d:\d:\d+$/;
+      if(!regServ.test(bindid))
+        return '请检查STEAMID是否正确'
+
+      const userid = session.userId;
+      const query = await ctx.database.get('l4d2', {id: userid});
+      if( query[0] != null ) { // set
+        logger.info(`[l4d2 Info]: User Found, update steamid`);
+        await ctx.database.set('l4d2', {id: userid}, {steamid: bindid});
+        return '已更新您绑定的SteamID'
+      } else { // create
+        logger.info(`[l4d2 Info]: User Not Found, create data`);
+        await ctx.database.create('l4d2', {id: userid, steamid: bindid});
+        return '已绑定您的SteamID'
+      }
+    })
+
   }
 
 
