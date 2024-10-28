@@ -13,8 +13,8 @@ import mysql from 'mysql2/promise';
 import Rcon from 'rcon-srcds';
 
 import { Info, Player, QueryServerInfo } from './types/a2s';
-import { secondFormat, time2Read } from './utils/timeFormat';
-import { _L4D2, _Reservation } from './database';
+import { secondFormat, time2Read, str2Time, timeFormat1 } from './utils/timeFormat';
+import { _Reservation, platformUser, initDatabase } from './database';
 
 export const name = 'l4d2-query'
 
@@ -166,15 +166,82 @@ const themeMap = new Map([
 
 export function apply(ctx: Context, config: Config) {
   // write your plugin here
-  ctx.model.extend('l4d2', {
-    id: 'string',
-    steamid: 'string'
+  initDatabase(ctx);
+
+  // 添加事件
+  // 列举未完成事件
+  // 删除事件
+  // ---------
+  // 修改事件时间
+  // 修改事件名称
+  // ---------
+  // 强制剔除参与者
+  // ---------
+  // 参加事件
+  // 退出事件
+  // 查看我参与的事件
+  // ---------
+  // 事件开始前提醒
+  // 事件开始后标记过期
+
+  // await ctx.database.get('gameReservation', {index: ???})
+  // 主键 是否过期 事件名称 事件时间 事件发起人 最大参与者人数 事件参加者 替补参加者
+  ctx.command('创建事件 <eventName:string> <eventTimeBig:string> <eventTimeSmall:string> [maxPlayer:posint]', { authority: 2 })
+  .userFields(['id'])
+  .action(async ({session}, eName, eDate1, eDate2, eMNum) => {
+    // check valid
+    const dateStr = eDate1+' '+eDate2;
+    const {valid:valid, passed:passed, date:date} = str2Time(dateStr);
+    if(valid === 1)
+      return '时间错误, 格式应为YYYY/MM/DD HH:MM'
+    if(passed)
+      return '时间已过期!'
+    let MaxPlayer:number = (eMNum === undefined)? 10000:eMNum;
+    const Initiator:platformUser = {uid:session.user.id, nickname:session.author.name};
+    const result:_Reservation = await ctx.database.create('gameReservation', {isExpired:false, eventName:eName, eventDate:date, eventMaxPp:MaxPlayer, eventInitiator:Initiator});
+    return `已创建编号为 ${result.index} 的事件预约`
   })
 
-  ctx.command('test')
-  .action(async ({session}, _) => {
-    console.log(session.userId);
+  ctx.command('列举事件')
+  .action(async ({session}) => {
+    const eventList = await ctx.database.get('gameReservation',
+      {isExpired: false},
+      ['index', 'eventDate', 'eventName']
+    );
+    if( eventList.length === 0 ) {
+      return '当前没有未完成的事件呢'
+    }
+    let output = h('message');
+    let i: number;
+    for(i=0; i<eventList.length; i++) {
+      output.children.push(h('p', `${eventList[i].index}.${eventList[i].eventName}-${timeFormat1(eventList[i].eventDate)}`));
+    }
+    session.send(output);
   })
+
+  ctx.command('删除事件 <eventNum:number>')
+  .action(async ({session}, eid) => {
+    const eventList = await ctx.database.get('gameReservation',
+      {index: eid},
+      ['eventDate', 'eventName']
+    );
+    if( eventList.length === 0 ) {
+      return `不存在编号为${eid}的事件`
+    }
+
+    await session.send(`是否删除${eid}.${eventList[0].eventName}-${timeFormat1(eventList[0].eventDate)}\r\n输入 y 确认`)
+    // comfirm
+    const input = await session.prompt(10000);
+    if(!input) return '输入超时'
+
+    if(input === 'y') {
+      await ctx.database.remove('gameReservation', {index: eid});
+      return '已删除'
+    } else {
+      return '已取消删除'
+    }
+  })
+
 
   ctx.command('l4d2', '查看求生之路指令详情')
 
@@ -387,6 +454,7 @@ export function apply(ctx: Context, config: Config) {
 
   if(config.useAnne) {
     ctx.command('l4d2/Anne查询 [name:text]', '查询玩家Anne药役数据')
+    .userFields(['id', 'name', 'steamid'])
     .usage('填写游戏内昵称, 或使用Anne绑定后直接查询')
     .example('Anne查询 koishi')
     .action(async ({session}, qName) => {
@@ -403,12 +471,10 @@ export function apply(ctx: Context, config: Config) {
         let steamid: string;
         let name: string;
         if( qName === undefined ) { // Use SteamID
-          const userid = session.userId;
-          const query = await ctx.database.get('l4d2', {id: userid});
-          if( query[0] == null ) {
+          if( session.user.steamid == '' ) {
             return '未绑定SteamID, 请输入查询昵称或绑定SteamID'
           }
-          steamid = query[0].steamid;
+          steamid = session.user.steamid;
           [ players, ] = await dbConn.execute(
             `select lastontime,playtime,points,name,rank from (select lastontime,playtime,points,steamid,name,@curRank:=@curRank+1 as rank from players s,(select @curRank:=0) q order by points desc) as tb1 where steamid="${steamid}"`
           );
@@ -447,23 +513,23 @@ export function apply(ctx: Context, config: Config) {
     })
 
     ctx.command('l4d2/Anne绑定 <steamid:string>', '绑定Anne查询使用的SteamID')
+    .userFields(['id', 'name', 'steamid'])
     .usage('指令后填写您的SteamID')
     .example('Anne绑定 STEAM_0:1:123456')
-    .action(async ({session}, bindid) => {
+    .action(async ({session}, gameid) => {
       const regServ = /^STEAM_\d:\d:\d+$/;
-      if(!regServ.test(bindid))
+      if(!regServ.test(gameid))
         return '请检查STEAMID是否正确'
 
-      const userid = session.userId;
-      const query = await ctx.database.get('l4d2', {id: userid});
-      if( query[0] != null ) { // set
-        logger.info(`[l4d2 Info]: User Found, update steamid`);
-        await ctx.database.set('l4d2', {id: userid}, {steamid: bindid});
-        return '已更新您绑定的SteamID'
-      } else { // create
-        logger.info(`[l4d2 Info]: User Not Found, create data`);
-        await ctx.database.create('l4d2', {id: userid, steamid: bindid});
+      let userid = session.user.id;
+      if( session.user.steamid == null ) { // set
+        logger.info(`[l4d2 Info]: Bind SteamID`);
+        await ctx.database.set('user', {id: userid}, {steamid: gameid});
         return '已绑定您的SteamID'
+      } else { // create
+        logger.info(`[l4d2 Info]: Update SteamID`);
+        await ctx.database.set('user', {id: userid}, {steamid: gameid});
+        return '已更新您的SteamID'
       }
     })
 

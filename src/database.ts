@@ -1,16 +1,18 @@
 import { Context } from 'koishi'
-import { Config } from '.'
+// import { platformUser } from './types/platform'
+
+export declare type platformUser = {
+  uid: number;
+  nickname: string;
+}
 
 declare module 'koishi' {
   interface Tables {
-    l4d2: _L4D2
     gameReservation: _Reservation
   }
-}
-
-export interface _L4D2 {
-  id: string
-  steamid: string
+  interface User {
+    steamid: string
+  }
 }
 
 export interface _Reservation {
@@ -19,26 +21,21 @@ export interface _Reservation {
   eventName: string
   eventDate: Date
   eventMaxPp: number
-  eventInitiator: object
-  eventParticipant: object
-  extraParticipant: object
+  eventInitiator: platformUser
+  eventParticipant: platformUser
+  extraParticipant: platformUser
 }
 
-
-export function apply(ctx: Context, config: Config) {
-  ctx.database.extend('l4d2', {
-    id: 'string',
-    steamid: 'string'
-  },{
-    autoInc: false,
-    primary: 'id'
+export const initDatabase = (ctx: Context) => {
+  ctx.model.extend('user', {
+    steamid: { type: 'string' }
   })
 
-  ctx.database.extend('gameReservation', {
+  ctx.model.extend('gameReservation', {
     index: 'unsigned',
     isExpired: 'boolean',
     eventName: 'string',
-    eventDate: 'date',
+    eventDate: 'timestamp',
     eventMaxPp: 'unsigned',
     eventInitiator: 'json',
     eventParticipant: 'json',
