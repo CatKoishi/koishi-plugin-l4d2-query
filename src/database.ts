@@ -6,6 +6,10 @@ export declare type platformUser = {
   nickname: string;
 }
 
+export declare type platformUserList = {
+  user:platformUser[]
+}
+
 declare module 'koishi' {
   interface Tables {
     gameReservation: _Reservation
@@ -22,8 +26,8 @@ export interface _Reservation {
   eventDate: Date
   eventMaxPp: number
   eventInitiator: platformUser
-  eventParticipant: platformUser
-  extraParticipant: platformUser
+  eventParticipant: platformUserList
+  extraParticipant: platformUserList
 }
 
 export const initDatabase = (ctx: Context) => {

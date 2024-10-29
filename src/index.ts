@@ -1,4 +1,4 @@
-import { Context, Schema, h, Session, Logger } from 'koishi'
+import { Context, Schema, h, Session, Logger, Database } from 'koishi'
 
 import {} from 'koishi-plugin-puppeteer';
 import { Page } from 'puppeteer-core';
@@ -14,7 +14,10 @@ import Rcon from 'rcon-srcds';
 
 import { Info, Player, QueryServerInfo } from './types/a2s';
 import { secondFormat, time2Read, str2Time, timeFormat1 } from './utils/timeFormat';
-import { _Reservation, platformUser, initDatabase } from './database';
+import { _Reservation, platformUser, platformUserList, initDatabase } from './database';
+import { platform } from 'node:os';
+import { json } from 'stream/consumers';
+import { cursorTo } from 'node:readline';
 
 export const name = 'l4d2-query'
 
@@ -168,16 +171,17 @@ export function apply(ctx: Context, config: Config) {
   // write your plugin here
   initDatabase(ctx);
 
-  // 添加事件
-  // 列举未完成事件
-  // 删除事件
-  // ---------
+  // 添加事件 *
+  // 删除事件 *
   // 修改事件时间
   // 修改事件名称
   // ---------
+  // 列举未完成事件 *
+  // 列举事件 *
+  // ---------
   // 强制剔除参与者
   // ---------
-  // 参加事件
+  // 参加事件 *
   // 退出事件
   // 查看我参与的事件
   // ---------
@@ -198,7 +202,8 @@ export function apply(ctx: Context, config: Config) {
       return '时间已过期!'
     let MaxPlayer:number = (eMNum === undefined)? 10000:eMNum;
     const Initiator:platformUser = {uid:session.user.id, nickname:session.author.name};
-    const result:_Reservation = await ctx.database.create('gameReservation', {isExpired:false, eventName:eName, eventDate:date, eventMaxPp:MaxPlayer, eventInitiator:Initiator});
+    const Party:platformUserList = { user:[] };
+    const result:_Reservation = await ctx.database.create('gameReservation', {isExpired:false, eventName:eName, eventDate:date, eventMaxPp:MaxPlayer, eventInitiator:Initiator, eventParticipant:Party, extraParticipant:Party});
     return `已创建编号为 ${result.index} 的事件预约`
   })
 
@@ -241,6 +246,102 @@ export function apply(ctx: Context, config: Config) {
       return '已取消删除'
     }
   })
+
+  ctx.command('参加事件 <eventNum:integer>')
+  .userFields(['id'])
+  .action(async ({session}, eid) => {
+    const eventList = await ctx.database.get('gameReservation',
+      {index: eid}
+    );
+    if( eventList.length === 0 ) {
+      return '未找到该事件ID!'
+    } else if ( eventList[0].isExpired === true ) {
+      return '事件已过期'
+    }
+
+    let curUser:platformUser = { uid:session.user.id, nickname:session.author.name };
+    
+    if( eventList[0].eventParticipant.user.length >= eventList[0].eventMaxPp ) { // Full, Go to Extra Party
+      eventList[0].extraParticipant.user.push(curUser);
+      await ctx.database.set('gameReservation',
+        { index: eid },
+        { extraParticipant: eventList[0].extraParticipant }
+      )
+      return '事件已满人，已加入替补参与者'
+    } else {
+      eventList[0].eventParticipant.user.push(curUser);
+      await ctx.database.set('gameReservation',
+        { index: eid },
+        { eventParticipant: eventList[0].eventParticipant }
+      )
+      return '成功加入事件'
+    }
+  })
+
+
+
+
+
+  ctx.command('查看事件 <eventNum:number>')
+  .action(async ({session}, eid) => {
+    const eventList = await ctx.database.get('gameReservation',
+      {index: eid},
+    );
+    if( eventList.length === 0 ) {
+      return `不存在编号为${eid}的事件`
+    }
+    let output = h('message',
+      h('p', `${eid}. ${eventList[0].eventName}`),
+      h('p', `${timeFormat1(eventList[0].eventDate)}`)
+    );
+
+    if(eventList[0].eventParticipant.user.length > 0) {
+      output.children.push(h('p', '参加人：'));
+      eventList[0].eventParticipant.user.forEach(item => {
+        output.children.push(h('p', `${item.nickname}`));
+      })
+    }
+    if(eventList[0].extraParticipant.user.length > 0) {
+      output.children.push(h('p', '替补：'));
+      eventList[0].extraParticipant.user.forEach(item => {
+        output.children.push(h('p', `${item.nickname}`));
+      })
+    }
+
+    session.send(output);
+  })
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
   ctx.command('l4d2', '查看求生之路指令详情')
