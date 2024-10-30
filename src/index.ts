@@ -1,8 +1,9 @@
-import { Context, Schema, h, Session, Logger, Database } from 'koishi'
+import { Context, Schema, h, Session, Logger, Bot } from 'koishi'
 
 import {} from 'koishi-plugin-puppeteer';
 import { Page } from 'puppeteer-core';
 import {} from '@cordisjs/plugin-proxy-agent'
+import {} from 'koishi-plugin-cron'
 
 import { promises } from 'node:dns';
 import fs from 'node:fs';
@@ -14,10 +15,7 @@ import Rcon from 'rcon-srcds';
 
 import { Info, Player, QueryServerInfo } from './types/a2s';
 import { secondFormat, time2Read, str2Time, timeFormat1 } from './utils/timeFormat';
-import { _Reservation, platformUser, platformUserList, initDatabase } from './database';
-import { platform } from 'node:os';
-import { json } from 'stream/consumers';
-import { cursorTo } from 'node:readline';
+import { _Reservation, platformUser, platformUserList, platformGroup, initDatabase } from './database';
 
 export const name = 'l4d2-query'
 
@@ -31,18 +29,18 @@ export const name = 'l4d2-query'
 // 经验评分 = 对抗胜率*(0.55*真实游戏时长+TANK石头命中数*每小时中石头数+T1武器击杀数*0.005*(1+单发霰弹枪击杀在T1武器击杀占比))
 
 export const usage = `
-## 从0.6.2之前旧版本升级需要移除配置后再添加新配置, 否则会有bug
+## ⚠️从0.6.2之前旧版本升级需要移除配置后再添加新配置, 否则会有bug⚠️
 
-## 求生之路群管理插件
+## ⭐️求生之路群管理插件
 
 灵感是来源于Agnes4m开发的基于nonebot的求生之路插件, 因为我是恋厨, 所以在部署了Koishi之后, 就想着把这个插件在Koishi上实现出来
 
-## 功能
+## ⚙️功能
 
 主要功能是connect查询服务器信息和方便查看群服状态\
 在此之外还添加了Anne查询, 服务器搜索的功能（可以关闭）
 
-配置都有做汉化, 跟着走就行, 基本上就是开箱即用的样子
+新增群车车功能, 目的是组织群友打三方图或者内战, 防止咕咕咕(⚠️未深度测试！！！
 
 #### 代理
 找服功能会使用steam api, 使用🪜连接会更加稳定\
@@ -53,15 +51,15 @@ Anne官方数据库是不开放的, 我自己也不知道的啦\
 如果你不知道怎么搭建Anne数据库, 就请将useAnne选项关闭\
 如果你知道怎么搭建Anne数据库, 那应该也不需要我来解释吧（
 
-## 联系方式
-QQ：1194703727\
-E-mail：nyakoishi@qq.com
+## ☎️联系方式
+Github提issue | QQ：1194703727 | nyakoishi@qq.com
 `
 
 export const inject = {
   "required": [
     "database",
     "puppeteer",
+    "cron",
     "logger"
   ]
 }
@@ -101,8 +99,8 @@ export interface Config {
 
 export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
-    themeType: Schema.union(['Normal', 'Dark', 'Neon', 'Wind']).default('Normal').experimental(),
-    nightMode: Schema.boolean().default(false).experimental(),
+    themeType: Schema.union(['Normal', 'Dark', 'Neon', 'Wind']).default('Normal'),
+    nightMode: Schema.boolean().default(false),
   }).description('主题设置'),
   Schema.union([
     Schema.object({
@@ -155,6 +153,12 @@ export const Config: Schema<Config> = Schema.intersect([
     }),
     Schema.object({}),
   ]),
+
+  Schema.object({
+    useEvent: Schema.boolean().default(false).experimental(),
+  }).description('开启事件系统')
+
+
 ]).i18n({ 
   'zh-CN': require('./locales/zh-CN'),
 });
@@ -171,7 +175,6 @@ const themeMap = new Map([
 
 export function apply(ctx: Context, config: Config) {
   // write your plugin here
-  initDatabase(ctx);
 
   // 添加事件 *
   // 删除事件 *
@@ -187,194 +190,255 @@ export function apply(ctx: Context, config: Config) {
   // 退出事件 *
   // 查看我参与的事件
   // ---------
-  // 事件开始前提醒
-  // 事件开始后标记过期 
+  // 事件开始前提醒 *
+  // 事件开始后标记过期 *
+  if(config.useEvent) {
+    initDatabase(ctx);
+    // 主键 是否过期 事件名称 事件时间 事件发起人 最大参与者人数 事件参加者 替补参加者
+    ctx.command('Event', '查看群事件预约说明')
 
-  // await ctx.database.get('gameReservation', {index: ???})
-  // 主键 是否过期 事件名称 事件时间 事件发起人 最大参与者人数 事件参加者 替补参加者
-  ctx.command('创建事件 <eventName:string> <eventTimeBig:string> <eventTimeSmall:string> [maxPlayer:posint]', { authority: 2 })
-  .userFields(['id'])
-  .action(async ({session}, eName, eDate1, eDate2, eMNum) => {
-    // check valid
-    const dateStr = eDate1+' '+eDate2;
-    const {valid:valid, passed:passed, date:date} = str2Time(dateStr);
-    if(valid === 1)
-      return '时间错误, 格式应为YYYY/MM/DD HH:MM'
-    if(passed)
-      return '时间已过期!'
-    let MaxPlayer:number = (eMNum === undefined)? 10000:eMNum;
-    const Initiator:platformUser = {uid:session.user.id, nickname:session.author.name};
-    const Party:platformUserList = { user:[] };
-    const result:_Reservation = await ctx.database.create('gameReservation', {isExpired:false, eventName:eName, eventDate:date, eventMaxPp:MaxPlayer, eventInitiator:Initiator, eventParticipant:Party, extraParticipant:Party});
-    return `已创建编号为 ${result.index} 的事件预约`
-  })
-
-  ctx.command('删除事件 <eventNum:number>')
-  .action(async ({session}, eid) => {
-    const eventList = await ctx.database.get('gameReservation',
-      {index: eid},
-      ['eventDate', 'eventName']
-    );
-    if( eventList.length === 0 ) {
-      return `不存在编号为${eid}的事件`
-    }
-
-    await session.send(`是否删除${eid}.${eventList[0].eventName}-${timeFormat1(eventList[0].eventDate)}\r\n输入 y 确认`)
-    // comfirm
-    const input = await session.prompt(10000);
-    if(!input) return '输入超时'
-
-    if(input === 'y') {
-      await ctx.database.remove('gameReservation', {index: eid});
-      return '已删除'
-    } else {
-      return '已取消删除'
-    }
-  })
-
-  ctx.command('列举事件')
-  .action(async ({session}) => {
-    const eventList = await ctx.database.get('gameReservation',
-      {isExpired: false},
-      ['index', 'eventDate', 'eventName']
-    );
-    if( eventList.length === 0 ) {
-      return '当前没有未完成的事件呢'
-    }
-    let output = h('message');
-    let i: number;
-    for(i=0; i<eventList.length; i++) {
-      output.children.push(h('p', `${eventList[i].index}.${eventList[i].eventName}-${timeFormat1(eventList[i].eventDate)}`));
-    }
-    session.send(output);
-  })
-
-  ctx.command('查看事件 <eventNum:number>')
-  .action(async ({session}, eid) => {
-    const eventList = await ctx.database.get('gameReservation',
-      {index: eid},
-    );
-    if( eventList.length === 0 ) {
-      return `不存在编号为${eid}的事件`
-    }
-    let output = h('message',
-      h('p', `${eid}. ${eventList[0].eventName}`),
-      h('p', `${timeFormat1(eventList[0].eventDate)}`)
-    );
-
-    if(eventList[0].eventParticipant.user.length > 0) {
-      output.children.push(h('p', '参加人：'));
-      eventList[0].eventParticipant.user.forEach(item => {
-        output.children.push(h('p', `${item.nickname}`));
+    ctx.command('Event/创建事件 <eventName:string> <eventTimeBig:string> <eventTimeSmall:string> [maxPlayer:posint]', '创建群事件预约', { authority: 2 })
+    .userFields(['id'])
+    .channelFields(['id'])
+    .example('创建事件 事件名称 2024/5/3 21:30 4 | 最后的4代表最大参加人数，可以不写')
+    .action(async ({session}, eName, eDate1, eDate2, eMNum) => {
+      // check valid
+      if(session.channel === undefined)
+        return '请在群聊中使用本指令'
+      const dateStr = eDate1+' '+eDate2;
+      const {valid:valid, passed:passed, date:date} = str2Time(dateStr);
+      if(valid === 1)
+        return '时间错误, 格式应为YYYY/MM/DD HH:MM'
+      if(passed)
+        return '时间已过期!'
+      let MaxPlayer:number = (eMNum === undefined)? 10000:eMNum;
+      const Initiator:platformUser = {uid:session.user.id, nickname:session.author.name};
+      const Party:platformUserList = { user:[] };
+      const groupInfo:platformGroup = { platform:session.platform, selfID:session.selfId, channelID:session.channel.id };
+      const result:_Reservation = await ctx.database.create('gameReservation', {
+        isExpired:false,
+        isNoticed:0,
+        eventName:eName,
+        eventGroup:groupInfo,
+        eventDate:date,
+        eventMaxPp:MaxPlayer,
+        eventInitiator:Initiator,
+        eventParticipant:Party,
+        extraParticipant:Party
+      });
+      return `已创建编号为 ${result.index} 的事件预约`
+    })
+  
+    ctx.command('Event/删除事件 <eventNum:number>', '删除群事件', { authority: 2 })
+    .channelFields(['id'])
+    .usage('指令后加事件编号')
+    .action(async ({session}, eid) => {
+      if(session.channel === undefined)
+        return '请在群聊中使用本指令'
+  
+      const eventList = await ctx.database.get('gameReservation',
+        {index: eid},
+        ['eventDate', 'eventName', 'eventGroup']
+      );
+      if( eventList.length === 0 ) {
+        return `不存在编号为${eid}的事件`
+      }
+  
+      if(eventList[0].eventGroup.channelID != session.channel.id) {
+        return '该事件不属于此群'
+      }
+  
+      await session.send(`是否删除${eid}.${eventList[0].eventName}-${timeFormat1(eventList[0].eventDate)}\r\n输入 y 确认`)
+      // comfirm
+      const input = await session.prompt(10000);
+      if(!input) return '输入超时'
+  
+      if(input === 'y') {
+        await ctx.database.remove('gameReservation', {index: eid});
+        return '已删除'
+      } else {
+        return '已取消删除'
+      }
+    })
+  
+    ctx.command('Event/列举事件')
+    .channelFields(['id'])
+    .action(async ({session}) => {
+      const eventList = await ctx.database.get('gameReservation',
+        {isExpired: false},
+        ['index', 'eventDate', 'eventName', 'eventGroup']
+      );
+  
+      if(session.channel === undefined)
+        return '请在群聊中使用本指令'
+  
+      if( eventList.length === 0 ) {
+        return '当前没有未完成的事件呢'
+      }
+      let output = h('message');
+      let i: number;
+      for(i=0; i<eventList.length; i++) {
+        if(eventList[i].eventGroup.channelID === session.channel.id) {
+          output.children.push(h('p', `${eventList[i].index}.${eventList[i].eventName}-${timeFormat1(eventList[i].eventDate)}`));
+        }
+      }
+      if(output.children.length === 0) {
+        return '本群没有未完成的事件~'
+      }
+      session.send(output);
+    })
+  
+    ctx.command('Event/查看事件 <eventNum:number>', '查看某编号的事件')
+    .action(async ({session}, eid) => {
+      const eventList = await ctx.database.get('gameReservation',
+        {index: eid},
+      );
+      if( eventList.length === 0 ) {
+        return `不存在编号为${eid}的事件`
+      }
+      let output = h('message',
+        h('p', `${eid}. ${eventList[0].eventName}`),
+        h('p', `${timeFormat1(eventList[0].eventDate)}`)
+      );
+  
+      if(eventList[0].eventParticipant.user.length > 0) {
+        output.children.push(h('p', '参加人：'));
+        eventList[0].eventParticipant.user.forEach(item => {
+          output.children.push(h('p', `${item.nickname}`));
+        })
+      }
+      if(eventList[0].extraParticipant.user.length > 0) {
+        output.children.push(h('p', '替补：'));
+        eventList[0].extraParticipant.user.forEach(item => {
+          output.children.push(h('p', `${item.nickname}`));
+        })
+      }
+  
+      session.send(output);
+    })
+  
+    ctx.command('Event/参加事件 <eventNum:integer>', '参加事件')
+    .userFields(['id'])
+    .channelFields(['id'])
+    .action(async ({session}, eid) => {
+      if(session.channel === undefined)
+        return '请在群聊中使用本指令'
+  
+      const eventList = await ctx.database.get('gameReservation',
+        {index: eid}
+      );
+      if( eventList.length === 0 ) {
+        return '未找到该事件ID!'
+      } else if ( eventList[0].isExpired === true ) {
+        return '事件已过期'
+      }
+  
+      if(eventList[0].eventGroup.channelID != session.channel.id) {
+        return '该事件不属于本群'
+      }
+  
+      let curUser:platformUser = { uid:session.user.id, nickname:session.author.name };
+      
+      if( eventList[0].eventParticipant.user.length >= eventList[0].eventMaxPp ) { // Full, Go to Extra Party
+        eventList[0].extraParticipant.user.push(curUser);
+        await ctx.database.set('gameReservation',
+          { index: eid },
+          { extraParticipant: eventList[0].extraParticipant }
+        )
+        return '事件已满人，已加入替补参与者'
+      } else {
+        eventList[0].eventParticipant.user.push(curUser);
+        await ctx.database.set('gameReservation',
+          { index: eid },
+          { eventParticipant: eventList[0].eventParticipant }
+        )
+        return '成功加入事件'
+      }
+    })
+  
+    ctx.command('Event/退出事件 <eventNum:integer>', '退出事件')
+    .userFields(['id'])
+    .channelFields(['id'])
+    .action(async ({session}, eid) => {
+      if(session.channel === undefined)
+        return '请在群聊中使用本指令'
+  
+      const eventList = await ctx.database.get('gameReservation',
+        {index: eid}
+      );
+      if( eventList.length === 0 ) {
+        return '未找到该事件ID!'
+      } else if ( eventList[0].isExpired === true ) {
+        return '事件已过期'
+      }
+  
+      if(eventList[0].eventGroup.channelID != session.channel.id) {
+        return '该事件不属于本群'
+      }
+  
+      let curUser:platformUser = { uid:session.user.id, nickname:session.author.name };
+      
+      let indexA = eventList[0].eventParticipant.user.findIndex(item => item.uid === curUser.uid);
+      if(indexA != -1) {
+        eventList[0].eventParticipant.user.splice(indexA, 1);
+        if(eventList[0].extraParticipant.user.length > 0) {  // 存在替补
+          var shift:platformUser = eventList[0].extraParticipant.user.shift();
+          eventList[0].eventParticipant.user.push(shift);
+  
+          await ctx.database.set('gameReservation',
+            { index: eid },
+            { eventParticipant: eventList[0].eventParticipant, extraParticipant:eventList[0].extraParticipant }
+          )
+  
+          return `已退出该事件，替补@${shift.nickname} 已自动加入`
+        } else {
+          await ctx.database.set('gameReservation',
+            { index: eid },
+            { eventParticipant: eventList[0].eventParticipant }
+          )
+          
+          return `已退出该事件`
+        }
+      }
+      let indexB = eventList[0].extraParticipant.user.findIndex(item => item.uid === curUser.uid);
+      if(indexB != -1) {
+        eventList[0].extraParticipant.user.splice(indexB, 1);
+        await ctx.database.set('gameReservation',
+          { index: eid },
+          { extraParticipant: eventList[0].extraParticipant }
+        )
+        return '已退出此事件替补'
+      }
+      return '未参加此事件'
+    })
+  
+    /* Execute Every 10 minutes */
+    ctx.cron('*/10 * * * *', async () => {
+      // get not expired event notice
+      const eventList = await ctx.database.get('gameReservation',
+        {isExpired: false},
+        ['index', 'isNoticed', 'eventDate', 'eventGroup', 'eventName']
+      );
+      let nowDate = new Date();
+      eventList.forEach(async (item) => {
+        if( item.eventDate.getTime() - nowDate.getTime() < 0 ) { // Expired
+          await ctx.database.set('gameReservation',
+            { index: item.index },
+            { isExpired: true }
+          )
+        } else { // Not Expired, Check Notice
+          if( (item.isNoticed === 0) && (item.eventDate.getTime()-nowDate.getTime() <= (30*60*1000)) ) {
+            const bot = ctx.bots.find(bot => bot.selfId === item.eventGroup.selfID)
+            bot.sendMessage(item.eventGroup.channelID, `事件 ${item.index}. ${item.eventName} 将于 ${item.eventDate.getHours()}:${item.eventDate.getMinutes()} 开始`);
+            await ctx.database.set('gameReservation',
+              { index: item.index },
+              { isNoticed: 1 }
+            )
+          }
+        }
       })
-    }
-    if(eventList[0].extraParticipant.user.length > 0) {
-      output.children.push(h('p', '替补：'));
-      eventList[0].extraParticipant.user.forEach(item => {
-        output.children.push(h('p', `${item.nickname}`));
-      })
-    }
-
-    session.send(output);
-  })
-
-  ctx.command('参加事件 <eventNum:integer>')
-  .userFields(['id'])
-  .action(async ({session}, eid) => {
-    const eventList = await ctx.database.get('gameReservation',
-      {index: eid}
-    );
-    if( eventList.length === 0 ) {
-      return '未找到该事件ID!'
-    } else if ( eventList[0].isExpired === true ) {
-      return '事件已过期'
-    }
-
-    let curUser:platformUser = { uid:session.user.id, nickname:session.author.name };
-    
-    if( eventList[0].eventParticipant.user.length >= eventList[0].eventMaxPp ) { // Full, Go to Extra Party
-      eventList[0].extraParticipant.user.push(curUser);
-      await ctx.database.set('gameReservation',
-        { index: eid },
-        { extraParticipant: eventList[0].extraParticipant }
-      )
-      return '事件已满人，已加入替补参与者'
-    } else {
-      eventList[0].eventParticipant.user.push(curUser);
-      await ctx.database.set('gameReservation',
-        { index: eid },
-        { eventParticipant: eventList[0].eventParticipant }
-      )
-      return '成功加入事件'
-    }
-  })
-
-  ctx.command('退出事件 <eventNum:integer>')
-  .userFields(['id'])
-  .action(async ({session}, eid) => {
-    const eventList = await ctx.database.get('gameReservation',
-      {index: eid}
-    );
-    if( eventList.length === 0 ) {
-      return '未找到该事件ID!'
-    } else if ( eventList[0].isExpired === true ) {
-      return '事件已过期'
-    }
-
-    let curUser:platformUser = { uid:session.user.id, nickname:session.author.name };
-    
-    let indexA = eventList[0].eventParticipant.user.findIndex(item => item.uid === curUser.uid);
-    if(indexA != -1) {
-      eventList[0].eventParticipant.user.splice(indexA, 1);
-      await ctx.database.set('gameReservation',
-        { index: eid },
-        { eventParticipant: eventList[0].eventParticipant }
-      )
-      return '已退出此事件'
-    }
-    let indexB = eventList[0].extraParticipant.user.findIndex(item => item.uid === curUser.uid);
-    if(indexB != -1) {
-      eventList[0].extraParticipant.user.splice(indexB, 1);
-      await ctx.database.set('gameReservation',
-        { index: eid },
-        { extraParticipant: eventList[0].extraParticipant }
-      )
-      return '已退出此事件候补'
-    }
-    return '未参加此事件'
-  })
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    })
+  }
 
 
 

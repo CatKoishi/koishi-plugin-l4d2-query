@@ -36,3 +36,4 @@
   dbUser: 数据库用户名
   dbPassword: 数据库密码
   dbName: 数据库名( l4d2stats )
+- useEvent: 启用群车车事件预约功能
