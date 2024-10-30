@@ -95,6 +95,8 @@ export interface Config {
     nightEnd: number
     nightOLED: boolean
   },
+
+  useEvent?: boolean,
 }
 
 export const Config: Schema<Config> = Schema.intersect([
@@ -182,11 +184,11 @@ export function apply(ctx: Context, config: Config) {
   // 强制剔除参与者
   // ---------
   // 参加事件 *
-  // 退出事件
+  // 退出事件 *
   // 查看我参与的事件
   // ---------
   // 事件开始前提醒
-  // 事件开始后标记过期
+  // 事件开始后标记过期 
 
   // await ctx.database.get('gameReservation', {index: ???})
   // 主键 是否过期 事件名称 事件时间 事件发起人 最大参与者人数 事件参加者 替补参加者
@@ -205,23 +207,6 @@ export function apply(ctx: Context, config: Config) {
     const Party:platformUserList = { user:[] };
     const result:_Reservation = await ctx.database.create('gameReservation', {isExpired:false, eventName:eName, eventDate:date, eventMaxPp:MaxPlayer, eventInitiator:Initiator, eventParticipant:Party, extraParticipant:Party});
     return `已创建编号为 ${result.index} 的事件预约`
-  })
-
-  ctx.command('列举事件')
-  .action(async ({session}) => {
-    const eventList = await ctx.database.get('gameReservation',
-      {isExpired: false},
-      ['index', 'eventDate', 'eventName']
-    );
-    if( eventList.length === 0 ) {
-      return '当前没有未完成的事件呢'
-    }
-    let output = h('message');
-    let i: number;
-    for(i=0; i<eventList.length; i++) {
-      output.children.push(h('p', `${eventList[i].index}.${eventList[i].eventName}-${timeFormat1(eventList[i].eventDate)}`));
-    }
-    session.send(output);
   })
 
   ctx.command('删除事件 <eventNum:number>')
@@ -245,6 +230,52 @@ export function apply(ctx: Context, config: Config) {
     } else {
       return '已取消删除'
     }
+  })
+
+  ctx.command('列举事件')
+  .action(async ({session}) => {
+    const eventList = await ctx.database.get('gameReservation',
+      {isExpired: false},
+      ['index', 'eventDate', 'eventName']
+    );
+    if( eventList.length === 0 ) {
+      return '当前没有未完成的事件呢'
+    }
+    let output = h('message');
+    let i: number;
+    for(i=0; i<eventList.length; i++) {
+      output.children.push(h('p', `${eventList[i].index}.${eventList[i].eventName}-${timeFormat1(eventList[i].eventDate)}`));
+    }
+    session.send(output);
+  })
+
+  ctx.command('查看事件 <eventNum:number>')
+  .action(async ({session}, eid) => {
+    const eventList = await ctx.database.get('gameReservation',
+      {index: eid},
+    );
+    if( eventList.length === 0 ) {
+      return `不存在编号为${eid}的事件`
+    }
+    let output = h('message',
+      h('p', `${eid}. ${eventList[0].eventName}`),
+      h('p', `${timeFormat1(eventList[0].eventDate)}`)
+    );
+
+    if(eventList[0].eventParticipant.user.length > 0) {
+      output.children.push(h('p', '参加人：'));
+      eventList[0].eventParticipant.user.forEach(item => {
+        output.children.push(h('p', `${item.nickname}`));
+      })
+    }
+    if(eventList[0].extraParticipant.user.length > 0) {
+      output.children.push(h('p', '替补：'));
+      eventList[0].extraParticipant.user.forEach(item => {
+        output.children.push(h('p', `${item.nickname}`));
+      })
+    }
+
+    session.send(output);
   })
 
   ctx.command('参加事件 <eventNum:integer>')
@@ -278,38 +309,42 @@ export function apply(ctx: Context, config: Config) {
     }
   })
 
-
-
-
-
-  ctx.command('查看事件 <eventNum:number>')
+  ctx.command('退出事件 <eventNum:integer>')
+  .userFields(['id'])
   .action(async ({session}, eid) => {
     const eventList = await ctx.database.get('gameReservation',
-      {index: eid},
+      {index: eid}
     );
     if( eventList.length === 0 ) {
-      return `不存在编号为${eid}的事件`
-    }
-    let output = h('message',
-      h('p', `${eid}. ${eventList[0].eventName}`),
-      h('p', `${timeFormat1(eventList[0].eventDate)}`)
-    );
-
-    if(eventList[0].eventParticipant.user.length > 0) {
-      output.children.push(h('p', '参加人：'));
-      eventList[0].eventParticipant.user.forEach(item => {
-        output.children.push(h('p', `${item.nickname}`));
-      })
-    }
-    if(eventList[0].extraParticipant.user.length > 0) {
-      output.children.push(h('p', '替补：'));
-      eventList[0].extraParticipant.user.forEach(item => {
-        output.children.push(h('p', `${item.nickname}`));
-      })
+      return '未找到该事件ID!'
+    } else if ( eventList[0].isExpired === true ) {
+      return '事件已过期'
     }
 
-    session.send(output);
+    let curUser:platformUser = { uid:session.user.id, nickname:session.author.name };
+    
+    let indexA = eventList[0].eventParticipant.user.findIndex(item => item.uid === curUser.uid);
+    if(indexA != -1) {
+      eventList[0].eventParticipant.user.splice(indexA, 1);
+      await ctx.database.set('gameReservation',
+        { index: eid },
+        { eventParticipant: eventList[0].eventParticipant }
+      )
+      return '已退出此事件'
+    }
+    let indexB = eventList[0].extraParticipant.user.findIndex(item => item.uid === curUser.uid);
+    if(indexB != -1) {
+      eventList[0].extraParticipant.user.splice(indexB, 1);
+      await ctx.database.set('gameReservation',
+        { index: eid },
+        { extraParticipant: eventList[0].extraParticipant }
+      )
+      return '已退出此事件候补'
+    }
+    return '未参加此事件'
   })
+
+
 
 
 
