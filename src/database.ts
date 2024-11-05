@@ -30,6 +30,7 @@ export interface _Reservation {
   isExpired: boolean
   isNoticed: number
   eventName: string
+  eventDesc: string
   eventGroup: platformGroup
   eventDate: Date
   eventMaxPp: number
@@ -48,6 +49,7 @@ export const initDatabase = (ctx: Context) => {
     isExpired: 'boolean',
     isNoticed: 'integer',
     eventName: 'string',
+    eventDesc: 'text',
     eventGroup: 'json',
     eventDate: 'timestamp',
     eventMaxPp: 'unsigned',

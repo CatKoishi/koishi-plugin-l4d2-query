@@ -20,13 +20,9 @@ import { _Reservation, platformUser, platformUserList, platformGroup, initDataba
 export const name = 'l4d2-query'
 
 // ToDo
-// 玩家游戏数据查询, 评分
-// 群车预约, 报名接力
+// 群车预约, 报名接力(完善)
 // 代码稳定性提升(缺少测试)
 // 制作VTF(长期)
-
-// 主键 是否过期 事件名称 事件时间 事件发起人 最大参与者人数 事件参加者 替补参加者
-// 经验评分 = 对抗胜率*(0.55*真实游戏时长+TANK石头命中数*每小时中石头数+T1武器击杀数*0.005*(1+单发霰弹枪击杀在T1武器击杀占比))
 
 export const usage = `
 ## ⚠️从0.6.2之前旧版本升级需要移除配置后再添加新配置, 否则会有bug⚠️
@@ -37,7 +33,8 @@ export const usage = `
 
 ## ⚙️功能
 
-主要功能是connect查询服务器信息和方便查看群服状态\
+主要功能是connect查询服务器信息和一键查看群服状态
+
 在此之外还添加了Anne查询, 服务器搜索的功能（可以关闭）
 
 新增群车车功能, 目的是组织群友打三方图或者内战, 防止咕咕咕(⚠️未深度测试！！！
@@ -50,6 +47,11 @@ export const usage = `
 Anne官方数据库是不开放的, 我自己也不知道的啦\
 如果你不知道怎么搭建Anne数据库, 就请将useAnne选项关闭\
 如果你知道怎么搭建Anne数据库, 那应该也不需要我来解释吧（
+
+#### Rcon
+使用rcon可以帮助你远程执行服务器指令, 提醒一下, Minecraft也是支持Rcon的哦（
+
+求生之路服务器Rcon会使用和游戏相同的端口, 只是协议更换为TCP, 对于某些使用特定网络配置的服务器, 会出现无法连接rcon的情况, 这是因为rcon服务监听到服务器本地环回地址, 使用端口转发工具即可解决问题
 
 ## ☎️联系方式
 Github提issue | QQ：1194703727 | nyakoishi@qq.com
@@ -116,7 +118,7 @@ export const Config: Schema<Config> = Schema.intersect([
   
   Schema.object({
     servList: Schema.array(Schema.object({
-      ip: Schema.string().pattern(/^((2(5[0-5]|[0-4]\d))|[0-1]?\d{1,2})(\.((2(5[0-5]|[0-4]\d))|[0-1]?\d{1,2})){3}$/).default('8.8.8.8'),
+      ip: Schema.string().default('8.8.8.8'),
       port: Schema.number().default(27015).min(10).max(65535),
       rconEnable: Schema.boolean().default(false),
       rconPort: Schema.number().default(27015).min(10).max(65535),
@@ -152,7 +154,7 @@ export const Config: Schema<Config> = Schema.intersect([
       dbName: Schema.string().required()
     }),
     Schema.object({}),
-  ]),
+  ]).collapse(),
 
   Schema.object({
     useEvent: Schema.boolean().default(false).experimental(),
@@ -175,29 +177,16 @@ const themeMap = new Map([
 
 export function apply(ctx: Context, config: Config) {
   // write your plugin here
+  // ctx.server.all('/test', item => {
+  //   item.body = 'hello koishi'
+  // })
 
-  // 添加事件 *
-  // 删除事件 *
-  // 修改事件时间
-  // 修改事件名称
-  // ---------
-  // 列举未完成事件 *
-  // 列举事件 *
-  // ---------
-  // 强制剔除参与者
-  // ---------
-  // 参加事件 *
-  // 退出事件 *
-  // 查看我参与的事件
-  // ---------
-  // 事件开始前提醒 *
-  // 事件开始后标记过期 *
   if(config.useEvent) {
     initDatabase(ctx);
     // 主键 是否过期 事件名称 事件时间 事件发起人 最大参与者人数 事件参加者 替补参加者
     ctx.command('Event', '查看群事件预约说明')
 
-    ctx.command('Event/创建事件 <eventName:string> <eventTimeBig:string> <eventTimeSmall:string> [maxPlayer:posint]', '创建群事件预约', { authority: 2 })
+    ctx.command('event.add <eventName:string> <eventTimeBig:string> <eventTimeSmall:string> [maxPlayer:posint]', '创建群事件预约', { authority: 2 })
     .userFields(['id'])
     .channelFields(['id'])
     .example('创建事件 事件名称 2024/5/3 21:30 4 | 最后的4代表最大参加人数，可以不写')
@@ -229,7 +218,7 @@ export function apply(ctx: Context, config: Config) {
       return `已创建编号为 ${result.index} 的事件预约`
     })
   
-    ctx.command('Event/删除事件 <eventNum:number>', '删除群事件', { authority: 2 })
+    ctx.command('event.del <eventNum:integer>', '删除群事件', { authority: 2 })
     .channelFields(['id'])
     .usage('指令后加事件编号')
     .action(async ({session}, eid) => {
@@ -287,8 +276,89 @@ export function apply(ctx: Context, config: Config) {
       }
       session.send(output);
     })
+
+    ctx.command('event.chtime <eventNum:integer> <Time:text>', '更改事件时间', { authority: 2 })
+    .userFields(['id'])
+    .channelFields(['id'])
+    .action(async ({session}, eid, eDate) => {
+      if(session.channel === undefined)
+        return '请在群聊中使用本指令'
+      const dateStr = eDate;
+      const {valid:valid, passed:passed, date:date} = str2Time(dateStr);
+      if(valid === 1)
+        return '时间错误, 格式应为YYYY/MM/DD HH:MM'
+      if(passed)
+        return '时间已过期!'
+
+      const eventList = await ctx.database.get('gameReservation',
+        {index: eid},
+        ['eventDate', 'isExpired', 'eventName']
+      );
+      if( eventList.length === 0 ) {
+        return '未找到该事件ID!'
+      } else if ( eventList[0].isExpired === true ) {
+        return '事件已过期'
+      }
+
+      await ctx.database.set('gameReservation',
+        { index: eid },
+        { eventDate: date }
+      )
+
+      return `已将事件 ${eid}.${eventList[0].eventName} 的时间从 ${timeFormat1(eventList[0].eventDate)} 修改为 ${timeFormat1(date)}`
+
+    })
+
+    ctx.command('event.chname <eventNum:integer> <eventName:string>', '更改事件名称', { authority: 2 })
+    .userFields(['id'])
+    .channelFields(['id'])
+    .action(async ({session}, eid, ename) => {
+      if(session.channel === undefined)
+        return '请在群聊中使用本指令'
+
+      const eventList = await ctx.database.get('gameReservation',
+        {index: eid},
+        ['eventName']
+      );
+      if( eventList.length === 0 ) {
+        return '未找到该事件ID!'
+      }
+
+      await ctx.database.set('gameReservation',
+        { index: eid },
+        { eventName: ename }
+      )
+
+      return `已将事件 ${eid}.${eventList[0].eventName} 修改为 ${ename}`
+    })
+
+    ctx.command('event.desc <eventNum:integer> <description:text>', '添加事件说明', { authority: 2 })
+    .userFields(['id'])
+    .channelFields(['id'])
+    .action(async ({session}, eid, edesc) => {
+      if(session.channel === undefined)
+        return '请在群聊中使用本指令'
+
+      const eventList = await ctx.database.get('gameReservation',
+        {index: eid},
+        ['eventName']
+      );
+      if( eventList.length === 0 ) {
+        return '未找到该事件ID!'
+      }
+
+      await ctx.database.set('gameReservation',
+        { index: eid },
+        { eventDesc: edesc }
+      )
+
+      return `已更新事件 ${eid}.${eventList[0].eventName} 的说明`
+    })
+
+
+
   
-    ctx.command('Event/查看事件 <eventNum:number>', '查看某编号的事件')
+    ctx.command('Event/查看事件 <eventNum:integer>', '查看某编号的事件')
     .action(async ({session}, eid) => {
       const eventList = await ctx.database.get('gameReservation',
         {index: eid},
@@ -296,25 +366,27 @@ export function apply(ctx: Context, config: Config) {
       if( eventList.length === 0 ) {
         return `不存在编号为${eid}的事件`
       }
-      let output = h('message',
+      let msg = h('message',
         h('p', `${eid}. ${eventList[0].eventName}`),
         h('p', `${timeFormat1(eventList[0].eventDate)}`)
       );
-  
+      
+      if(eventList[0].eventDesc != '') {
+        msg.children.push(h('p', `详情：${eventList[0].eventDesc}`));
+      }
+      
       if(eventList[0].eventParticipant.user.length > 0) {
-        output.children.push(h('p', '参加人：'));
         eventList[0].eventParticipant.user.forEach(item => {
-          output.children.push(h('p', `${item.nickname}`));
+          msg.children.push(h('p', `☑️${item.nickname}`));
         })
       }
       if(eventList[0].extraParticipant.user.length > 0) {
-        output.children.push(h('p', '替补：'));
         eventList[0].extraParticipant.user.forEach(item => {
-          output.children.push(h('p', `${item.nickname}`));
+          msg.children.push(h('p', `🟪${item.nickname}`));
         })
       }
   
-      session.send(output);
+      session.send(msg);
     })
   
     ctx.command('Event/参加事件 <eventNum:integer>', '参加事件')
@@ -339,6 +411,10 @@ export function apply(ctx: Context, config: Config) {
   
       let curUser:platformUser = { uid:session.user.id, nickname:session.author.name };
       
+      if( (eventList[0].eventParticipant.user.find(obj => obj.uid == curUser.uid) != undefined) || (eventList[0].extraParticipant.user.find(obj => obj.uid == curUser.uid) != undefined)) {
+        return '请勿重复参加'
+      }
+
       if( eventList[0].eventParticipant.user.length >= eventList[0].eventMaxPp ) { // Full, Go to Extra Party
         eventList[0].extraParticipant.user.push(curUser);
         await ctx.database.set('gameReservation',
@@ -449,19 +525,7 @@ export function apply(ctx: Context, config: Config) {
   .usage('填写IP/域名:端口 无端口号时默认使用27015')
   .example('connect 123.123.123.123:27015')
   .action(async ( {session}, address ) => {
-    const addr = address.split(":");
-    let ip = addr[0];
-    let port:number | string = 27015;
-    addr[1] && (port = addr[1]);
-
-    if (!checkIpValid(ip)) {  // dns
-      const resolver = new promises.Resolver();
-      const addresses = await resolver.resolve4(ip);
-      if (addresses.length) {
-        ip = addresses[0];
-      }
-    }
-    
+    const { ip, port } = await convServerAddr(address);
     const { code, info, players } = await queryServerInfo(ip, port);
     session.send( servInfo2Text(code, info, players) );
   })
@@ -482,8 +546,34 @@ export function apply(ctx: Context, config: Config) {
 
       var index:number;
 
+      if ( maxServNum === 1 ) {
+        workhtml = workhtml.replace("#{cellArrange}#", "auto");
+      } else if ( maxServNum === 2 ) {
+        workhtml = workhtml.replace("#{cellArrange}#", "auto auto");
+      } else {
+        workhtml = workhtml.replace("#{cellArrange}#", "auto auto auto");
+      }
+      const date = new Date();
+      let theme:string[];
+      if ( config.nightMode && (date.getHours() >= config.nightConfig.nightStart || date.getHours() <= config.nightConfig.nightEnd) ) {
+        if ( config.nightConfig.nightOLED ) {
+          theme = themeMap.get("OLED").split(':');
+        } else {
+          theme = themeMap.get("Dark").split(':');
+        }
+      } else {
+        theme = themeMap.get(config.themeType).split(':');
+      }
+      
+      workhtml = workhtml
+      .replaceAll("#{themeBG}#", theme[0])
+      .replaceAll("#{themeColor}#", theme[1])
+      .replaceAll("#{themeInner}#", theme[2])
+      .replaceAll("#{themeBorder}#", theme[3])
+
       for(index=0; index<maxServNum; index++) {
-        const { code, info, players } = await queryServerInfo(config.servList[index].ip, config.servList[index].port);
+        const { ip, port } = await convServerAddr(config.servList[index].ip);
+        const { code, info, players } = await queryServerInfo(ip, config.servList[index].port);
         if(code === 0) {
           workhtml = workhtml
           .replace("<!-- ##{SERVER_CELL}## -->", templateCELL)
@@ -510,31 +600,6 @@ export function apply(ctx: Context, config: Config) {
           .replace("#{SVG}#", "u.svg")
         }
       }
-
-      if ( maxServNum === 1 ) {
-        workhtml = workhtml.replace("#{cellArrange}#", "auto");
-      } else if ( maxServNum === 2 ) {
-        workhtml = workhtml.replace("#{cellArrange}#", "auto auto");
-      } else {
-        workhtml = workhtml.replace("#{cellArrange}#", "auto auto auto");
-      }
-      const date = new Date();
-      let theme:string[];
-      if ( config.nightMode && (date.getHours() >= config.nightConfig.nightStart || date.getHours() <= config.nightConfig.nightEnd) ) {
-        if ( config.nightConfig.nightOLED ) {
-          theme = themeMap.get("OLED").split(':');
-        } else {
-          theme = themeMap.get("Dark").split(':');
-        }
-      } else {
-        theme = themeMap.get(config.themeType).split(':');
-      }
-      
-      workhtml = workhtml
-      .replaceAll("#{themeBG}#", theme[0])
-      .replaceAll("#{themeColor}#", theme[1])
-      .replaceAll("#{themeInner}#", theme[2])
-      .replaceAll("#{themeBorder}#", theme[3])
       
       fs.writeFileSync(path.resolve(__dirname, "./html/index.html"), workhtml);
       
@@ -565,7 +630,6 @@ export function apply(ctx: Context, config: Config) {
     }
     
   });
-
   
   const regexp = /^服务器[1-9]\d*$/;
   ctx.middleware( async (session, _) => {
@@ -651,15 +715,36 @@ export function apply(ctx: Context, config: Config) {
     });
   }
   
+  ctx.command('l4d2/Steam绑定 <steamid:string>', '绑定Anne查询,数据查询使用的SteamID')
+  .userFields(['id', 'steamid'])
+  .usage('指令后填写您的SteamID')
+  .example('Anne绑定 STEAM_0:1:123456')
+  .action(async ({session}, gameid) => {
+    const regServ = /^STEAM_[0,1]:[0,1]:\d+$/;
+    if(!regServ.test(gameid))
+      return '请检查STEAMID是否正确'
+
+    let userid = session.user.id;
+    if( session.user.steamid == null ) { // set
+      logger.info(`[l4d2 Info]: Bind SteamID`);
+      await ctx.database.set('user', {id: userid}, {steamid: gameid});
+      return '已绑定您的SteamID'
+    } else { // create
+      logger.info(`[l4d2 Info]: Update SteamID`);
+      await ctx.database.set('user', {id: userid}, {steamid: gameid});
+      return '已更新您的SteamID'
+    }
+  })
 
   if(config.useAnne) {
     ctx.command('l4d2/Anne查询 [name:text]', '查询玩家Anne药役数据')
-    .userFields(['id', 'name', 'steamid'])
+    .userFields(['id', 'steamid'])
     .usage('填写游戏内昵称, 或使用Anne绑定后直接查询')
     .example('Anne查询 koishi')
     .action(async ({session}, qName) => {
+      const { ip, port } = await convServerAddr(config.dbIp);
       const dbConn = await mysql.createConnection({
-        host: config.dbIp,
+        host: ip,
         port: config.dbPort,
         user: config.dbUser,
         password: config.dbPassword,
@@ -711,29 +796,85 @@ export function apply(ctx: Context, config: Config) {
         return '找不到qwq, 是不是输错啦?'
       }
     })
-
-    ctx.command('l4d2/Anne绑定 <steamid:string>', '绑定Anne查询使用的SteamID')
-    .userFields(['id', 'name', 'steamid'])
-    .usage('指令后填写您的SteamID')
-    .example('Anne绑定 STEAM_0:1:123456')
-    .action(async ({session}, gameid) => {
-      const regServ = /^STEAM_\d:\d:\d+$/;
-      if(!regServ.test(gameid))
-        return '请检查STEAMID是否正确'
-
-      let userid = session.user.id;
-      if( session.user.steamid == null ) { // set
-        logger.info(`[l4d2 Info]: Bind SteamID`);
-        await ctx.database.set('user', {id: userid}, {steamid: gameid});
-        return '已绑定您的SteamID'
-      } else { // create
-        logger.info(`[l4d2 Info]: Update SteamID`);
-        await ctx.database.set('user', {id: userid}, {steamid: gameid});
-        return '已更新您的SteamID'
-      }
-    })
-
   }
+
+  ctx.command('l4d2/求生数据 [steamid:string]', '查询求生之路玩家数据')
+  .usage('参数填写SteamID或SteamID64, 或绑定ID后快速查询')
+  .userFields(['id', 'steamid'])
+  .action(async ({session}, sid) => {
+    if(!config.steamWebApi)
+      return '请设置Steam API Key'
+
+    let steamid:string;
+    if( sid === undefined ) { // use database bind steamid
+      if( session.user.steamid == '' ) {
+        return '未绑定SteamID, 请输入SteamID或绑定SteamID'
+      }
+      steamid = session.user.steamid
+    } else { // use input steamid
+      steamid = sid;
+    }
+    let {code:ret, sid64:steamid64} = convSteamID(steamid);
+    if(ret != 0) {
+      return 'SteamID格式错误'
+    }
+
+    let qUrl = `https://api.steampowered.com/ISteamUserStats/GetUserStatsForGame/v0002/?appid=550&key=${config.steamWebApi}&steamid=${steamid64}`; // get l4d2 stats
+    let qUrlA = `https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${config.steamWebApi}&steamids=${steamid64}` // get user name
+
+    let qResponse, qResponseA;
+    try {
+      if( config.useProxy === false ) {
+        qResponse = await ctx.http.get(qUrl);
+        qResponseA = await ctx.http.get(qUrlA);
+      } else {
+        qResponse = await ctx.http.get(qUrl, { proxyAgent: config.useProxy });
+        qResponseA = await ctx.http.get(qUrlA, { proxyAgent: config.useProxy });
+      }
+    } catch (error) {
+      logger.error(`[l4d2 Error]: `+error);
+      return '网络错误！'
+    }
+
+    
+    const sNickname = qResponseA.response.players[0].personaname;
+
+    const sPlayTime = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.TotalPlayTime.Total'); // s
+
+    const sVersusWon = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.GamesWon.Versus');
+    const sVersusLost = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.GamesLost.Versus');
+
+    const sPistolKill = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.pistol.Kills.Total'); 
+    const sMagnumKill = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.pistol_magnum.Kills.Total');
+
+    const sSmgKill = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.smg_silenced.Kills.Total');
+    const sUziKill = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.smg.Kills.Total');
+
+    const sPumpKill = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.pumpshotgun.Kills.Total');
+    const sChromeKill = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.shotgun_chrome.Kills.Total');
+
+    const sHuntingKill = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.hunting_rifle.Kills.Total');
+
+    const sPumpHeadKill = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.pumpshotgun.Head.Total');
+    const sChromeHeadKill = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.shotgun_chrome.Head.Total');
+
+    const sTankRockDmg = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.SpecAttack.Tank');
+    const sTankLifeSpan = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.TotalLifeSpan.Tank');
+    const sTankSpawn = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.TotalSpawns.Tank');
+
+    const t1kill:number = sPistolKill.value+sMagnumKill.value+sSmgKill.value+sUziKill.value+sPumpKill.value+sChromeKill.value+sHuntingKill.value+sPumpHeadKill.value+sChromeHeadKill.value;
+    const ExpRank:number = (sVersusWon.value / (sVersusWon.value + sVersusLost.value))*(0.55*sPlayTime.value/3600 + 0.005*t1kill);
+
+    const msg = h('message',
+      h('p', `玩家: ${sNickname}`),
+      h('p', `求生时长: ${secondFormat(sPlayTime.value, {onlyHour: true})}`),
+      h('p', `经验评分(伪): ${ExpRank.toFixed()}`),
+    )
+
+    session.send(msg);
+  })
+
+
 
 
   ctx.command('l4d2/rcon <server:string> <cmd:text>', '使用Rcon控制服务器', { authority: 4 })
@@ -766,8 +907,7 @@ export function apply(ctx: Context, config: Config) {
   })
 }
 
-function checkIpValid(ip:string)
-{
+function checkIpValid(ip:string) {
   const ipReg = /^((2(5[0-5]|[0-4]\d))|[0-1]?\d{1,2})(\.((2(5[0-5]|[0-4]\d))|[0-1]?\d{1,2})){3}$/;
   return ipReg.test(ip);
 }
@@ -818,4 +958,39 @@ function servInfo2Text( code: number, info: Info, players: Player[] ):h {
     servInfo = h.text("服务器无响应");
   }
   return servInfo;
+}
+
+
+function convSteamID( sid: string ) {
+  const reg1 = /^STEAM_[0,1]:[0,1]:\d+$/;
+  const reg2 = /^76561198[0-9]{9}$/;
+  if( reg1.test(sid) ) { // SteamID
+    const sp = sid.split(':');
+    const iServer:bigint = BigInt(sp[1]);
+    const iAuth:bigint = BigInt(sp[2]);
+    const b64:bigint = 76561197960265728n
+    const s64 = (iAuth*2n+b64+iServer).toString();
+    return {code:0, sid64:s64}
+  } else if( reg2.test(sid) ) {
+    return {code:0, sid64:sid}
+  } else {
+    return {code:1, sid64:null};
+  }
+}
+
+async function convServerAddr( url: string ) {
+  const addr = url.split(":");
+  let ip = addr[0];
+  let port:number | string = 27015;
+  addr[1] && (port = addr[1]);
+
+  if (!checkIpValid(ip)) {  // dns
+    const resolver = new promises.Resolver();
+    const addresses = await resolver.resolve4(ip).catch(() => {logger.error(`[l4d2 Error]:DNS Resolve Failed`)});
+    if (addresses && addresses.length) {
+      ip = addresses[0];
+    }
+  }
+
+  return {ip, port};
 }

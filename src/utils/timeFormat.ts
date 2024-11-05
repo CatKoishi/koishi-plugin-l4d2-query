@@ -1,13 +1,18 @@
 export function secondFormat(
   second: number,
-  props?: { inputMillisecond?: boolean; hour?: boolean }
+  props?: { inputMillisecond?: boolean; onlyHour?: boolean }
 ): string {
   second = Math.round(props?.inputMillisecond ? second / 1000 : second);
   if (second < 60) {
     const sStr = second < 10 ? `0${second}` : second;
     return `${sStr}s`;
   }
-  if (props?.hour && second > 3600) {
+  if ( props?.onlyHour ) {
+    if( second < 3600 ) { return '< 1h' }
+    const h = Math.floor(second / 3600);
+    return `${h}h`
+  }
+  if (second >= 3600) {
     const h = Math.floor(second / 3600);
     const m = Math.floor((second % 3600) / 60);
     const s = second % 60;
