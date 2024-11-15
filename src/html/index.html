@@ -38,22 +38,18 @@
 
         .roll {
             display: grid;
-            grid-template-columns: auto auto;
+            grid-template-columns: auto auto auto;
             row-gap: 20px;
             column-gap: 20px;
             margin-bottom: 20px;
-            margin-left: 1px;
-            margin-right: 1px;
-            top: 80px;
         }
 
         .cell {
             display: flex;
             padding: 5px;
             border-radius: 5px;
-            border: 1px solid #E5E7EB;
+            border: 2px solid #E5E7EB;
             background-color: #F5F6F7;
-            box-shadow: 0px 0px 5px #8B8B8B;
             max-width: 260px;
         }
 
@@ -69,7 +65,7 @@
             display: flex;
             flex-direction: row;
             font-size: 20px;
-            line-height: 120%;
+            line-height: 110%;
         }
 
         .servInfo {
@@ -91,20 +87,24 @@
             margin-bottom: -5px;
         }
 
-        p.blue {
+        .blue {
             line-height: 100%;
-            font-size: 16px;
+            font-size: 14px;
             color: rgb(25, 68, 161);
-            margin-top: 0px;
-            margin-bottom: 2px;
+            margin-bottom: -9px;
+            height: 18px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            overflow: hidden;
         }
 
         p.green {
-            line-height: 120%;
+            line-height: 110%;
             font-size: 16px;
             color: rgb(55, 103, 55);
-            margin-top: 0px;
-            margin-bottom: 0px;
+            margin-top: 2px;
+            margin-bottom: 2px;
+            white-space: pre-wrap;
         }
     </style>
 </head>
@@ -121,18 +121,13 @@
 
         <div class="cell">
             <div class="cellinside">
-                <div class="servTitle">1. 地灵殿 [4特25秒 | 重启:0]</div>
+                <div class="servTitle">1. 萌聚自定义战役重庆20服</div>
                 <div calss="servInfo">
-                    <p class="blue">c2m1_highway</p>
-                    <p class="green">
-                         <br>
-                         <br>
-                         <br>
-                         
-                    </p>
+                    <p class="green">大奈龙一只 | 48.5m<br>千玖 | 48.3m<br> <br> </p>
                 </div>
                 <div class="servStatus">
-                    <span class="info">0/4</span>
+                    <span class="info">2/2</span>
+                    <span class="blue">c2m1_highway</span>
                     <img src="l.svg" style="width: 16px;margin-top:2px;margin-bottom:-5px;">
                 </div>
             </div>
@@ -140,18 +135,27 @@
 
         <div class="cell">
             <div class="cellinside">
-                <div class="servTitle">2. 地灵殿 [4特25秒 | 重启:0]</div>
+                <div class="servTitle">2. 【芙芙の小屋】萌药4</div>
                 <div calss="servInfo">
-                    <p class="blue">c2m1_highway</p>
-                    <p class="green">
-                         <br>
-                         <br>
-                         <br>
-                         
-                    </p>
+                    <p class="green">晓山瑞希 | 46.6m<br>萌新机枪练习(不可骂) | 39.7m<br>萌新抗压练习(可骂) | 39.5m<br>k1tty⚡ | 38.5m</p>
                 </div>
                 <div class="servStatus">
-                    <span class="info">0/4</span>
+                    <span class="info">10/30</span>
+                    <span class="blue">c2m3_coaster</span>
+                    <img src="l.svg" style="width: 16px;margin-top:2px;margin-bottom:-5px;">
+                </div>
+            </div>
+        </div>
+
+        <div class="cell">
+            <div class="cellinside">
+                <div class="servTitle">3. 【芙芙の小屋】药抗12</div>
+                <div calss="servInfo">
+                    <p class="green">Neyo | 37.0m<br>心之所向，无所畏惧 | 33.4m<br>ANDONT | 32.5m<br>xad1001 | 31.9m</p>
+                </div>
+                <div class="servStatus">
+                    <span class="info">8/30</span>
+                    <span class="blue">c2m2_fairgrounds</span>
                     <img src="l.svg" style="width: 16px;margin-top:2px;margin-bottom:-5px;">
                 </div>
             </div>

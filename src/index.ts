@@ -14,7 +14,7 @@ import mysql from 'mysql2/promise';
 import Rcon from 'rcon-srcds';
 
 import { Info, Player, QueryServerInfo } from './types/a2s';
-import { secondFormat, time2Read, str2Time, timeFormat1 } from './utils/timeFormat';
+import { secondFormat, str2Time, timeFormat1 } from './utils/timeFormat';
 import { _Reservation, platformUser, platformUserList, platformGroup, initDatabase } from './database';
 
 export const name = 'l4d2-query'
@@ -29,7 +29,10 @@ export const usage = `
 
 ## ⭐️求生之路群管理插件
 
-灵感是来源于Agnes4m开发的基于nonebot的求生之路插件, 因为我是恋厨, 所以在部署了Koishi之后, 就想着把这个插件在Koishi上实现出来
+灵感源于[Agnes4m的求生之路插件](https://github.com/Agnes4m/nonebot_plugin_l4d2_server)和毛茸茸的Pure服插件, 基于[@wahaha216/a2s](https://github.com/wahaha216/koishi-plugin-a2s), 附加一些奇奇怪怪的小功能
+
+<details>
+<summary>查看详情</summary>
 
 ## ⚙️功能
 
@@ -55,6 +58,7 @@ Anne官方数据库是不开放的, 我自己也不知道的啦\
 
 ## ☎️联系方式
 Github提issue | QQ：1194703727 | nyakoishi@qq.com
+</details>
 `
 
 export const inject = {
@@ -218,13 +222,16 @@ export function apply(ctx: Context, config: Config) {
       return `已创建编号为 ${result.index} 的事件预约`
     })
   
-    ctx.command('event.del <eventNum:integer>', '删除群事件', { authority: 2 })
+    ctx.command('event.del <eventNum:posint>', '删除某编号事件', { authority: 2 })
     .channelFields(['id'])
     .usage('指令后加事件编号')
+    .example('event.del 3 | 删除3号事件')
     .action(async ({session}, eid) => {
       if(session.channel === undefined)
         return '请在群聊中使用本指令'
-  
+      if(eid === undefined)
+        return '未输入事件编号 请输入 help 指令名称 查看使用说明'
+
       const eventList = await ctx.database.get('gameReservation',
         {index: eid},
         ['eventDate', 'eventName', 'eventGroup']
@@ -242,7 +249,7 @@ export function apply(ctx: Context, config: Config) {
       const input = await session.prompt(10000);
       if(!input) return '输入超时'
   
-      if(input === 'y') {
+      if(input.includes('y')) {
         await ctx.database.remove('gameReservation', {index: eid});
         return '已删除'
       } else {
@@ -250,7 +257,7 @@ export function apply(ctx: Context, config: Config) {
       }
     })
   
-    ctx.command('Event/列举事件')
+    ctx.command('Event/列举事件', '输出未完成的事件列表')
     .channelFields(['id'])
     .action(async ({session}) => {
       const eventList = await ctx.database.get('gameReservation',
@@ -277,12 +284,17 @@ export function apply(ctx: Context, config: Config) {
       session.send(output);
     })
 
-    ctx.command('event.chtime <eventNum:integer> <Time:text>', '更改事件时间', { authority: 2 })
+    ctx.command('event.chtime <eventNum:posint> <Time:text>', '更改事件时间', { authority: 2 })
     .userFields(['id'])
     .channelFields(['id'])
+    .usage('指令后加事件编号与新的时间')
+    .example('event.chtime 3 2024/11/11 11:11 | 修改3号事件的时间')
     .action(async ({session}, eid, eDate) => {
       if(session.channel === undefined)
         return '请在群聊中使用本指令'
+      if(eid === undefined)
+        return '未输入事件编号 请输入 help 指令名称 查看使用说明'
+
       const dateStr = eDate;
       const {valid:valid, passed:passed, date:date} = str2Time(dateStr);
       if(valid === 1)
@@ -309,12 +321,16 @@ export function apply(ctx: Context, config: Config) {
 
     })
 
-    ctx.command('event.chname <eventNum:integer> <eventName:string>', '更改事件名称', { authority: 2 })
+    ctx.command('event.chname <eventNum:posint> <eventName:string>', '更改事件名称', { authority: 2 })
     .userFields(['id'])
     .channelFields(['id'])
+    .usage('指令后加事件编号与新的事件名称')
+    .example('event.chname 3 这是新的名称 | 修改3号事件的名称')
     .action(async ({session}, eid, ename) => {
       if(session.channel === undefined)
         return '请在群聊中使用本指令'
+      if(eid === undefined)
+        return '未输入事件编号 请输入 help 指令名称 查看使用说明'
 
       const eventList = await ctx.database.get('gameReservation',
         {index: eid},
@@ -332,12 +348,16 @@ export function apply(ctx: Context, config: Config) {
       return `已将事件 ${eid}.${eventList[0].eventName} 修改为 ${ename}`
     })
 
-    ctx.command('event.desc <eventNum:integer> <description:text>', '添加事件说明', { authority: 2 })
+    ctx.command('event.desc <eventNum:posint> <description:text>', '添加事件说明', { authority: 2 })
     .userFields(['id'])
     .channelFields(['id'])
+    .usage('指令后加事件编号与事件描述')
+    .example('event.desc 3 这是一段事件详情描述 | 增改3号事件的描述')
     .action(async ({session}, eid, edesc) => {
       if(session.channel === undefined)
         return '请在群聊中使用本指令'
+      if(eid === undefined)
+        return '未输入事件编号 请输入 help 指令名称 查看使用说明'
 
       const eventList = await ctx.database.get('gameReservation',
         {index: eid},
@@ -354,12 +374,14 @@ export function apply(ctx: Context, config: Config) {
 
       return `已更新事件 ${eid}.${eventList[0].eventName} 的说明`
     })
-
-
-
   
-    ctx.command('Event/查看事件 <eventNum:integer>', '查看某编号的事件')
+    ctx.command('Event/查看事件 <eventNum:posint>', '输出某编号事件的详情')
+    .usage('指令后加事件编号')
+    .example('查看事件 3 | 查看3号事件的信息')
     .action(async ({session}, eid) => {
+      if(eid === undefined)
+        return '未输入事件编号 请输入 help 指令名称 查看使用说明'
+
       const eventList = await ctx.database.get('gameReservation',
         {index: eid},
       );
@@ -389,13 +411,17 @@ export function apply(ctx: Context, config: Config) {
       session.send(msg);
     })
   
-    ctx.command('Event/参加事件 <eventNum:integer>', '参加事件')
+    ctx.command('Event/参加事件 <eventNum:posint>', '参加事件')
     .userFields(['id'])
     .channelFields(['id'])
+    .usage('指令后加事件编号')
+    .example('参加事件 3 | 参加3号事件')
     .action(async ({session}, eid) => {
       if(session.channel === undefined)
         return '请在群聊中使用本指令'
-  
+      if(eid === undefined)
+        return '未输入事件编号 请输入 help 指令名称 查看使用说明'
+
       const eventList = await ctx.database.get('gameReservation',
         {index: eid}
       );
@@ -432,13 +458,17 @@ export function apply(ctx: Context, config: Config) {
       }
     })
   
-    ctx.command('Event/退出事件 <eventNum:integer>', '退出事件')
+    ctx.command('Event/退出事件 <eventNum:posint>', '退出事件')
     .userFields(['id'])
     .channelFields(['id'])
+    .usage('指令后加事件编号')
+    .example('退出事件 3 | 退出3号事件')
     .action(async ({session}, eid) => {
       if(session.channel === undefined)
         return '请在群聊中使用本指令'
-  
+      if(eid === undefined)
+        return '未输入事件编号 请输入 help 指令名称 查看使用说明'
+
       const eventList = await ctx.database.get('gameReservation',
         {index: eid}
       );
@@ -525,6 +555,8 @@ export function apply(ctx: Context, config: Config) {
   .usage('填写IP/域名:端口 无端口号时默认使用27015')
   .example('connect 123.123.123.123:27015')
   .action(async ( {session}, address ) => {
+    if(address === undefined)
+      return '服务器地址未输入！'
     const { ip, port } = await convServerAddr(address);
     const { code, info, players } = await queryServerInfo(ip, port);
     session.send( servInfo2Text(code, info, players) );
@@ -555,8 +587,8 @@ export function apply(ctx: Context, config: Config) {
       }
       const date = new Date();
       let theme:string[];
-      if ( config.nightMode && (date.getHours() >= config.nightConfig.nightStart || date.getHours() <= config.nightConfig.nightEnd) ) {
-        if ( config.nightConfig.nightOLED ) {
+      if ( config.nightMode && (date.getHours() >= config.nightConfig[0].nightStart || date.getHours() <= config.nightConfig[0].nightEnd) ) {
+        if ( config.nightConfig[0].nightOLED ) {
           theme = themeMap.get("OLED").split(':');
         } else {
           theme = themeMap.get("Dark").split(':');
@@ -638,7 +670,8 @@ export function apply(ctx: Context, config: Config) {
       const index = Number(input.substring(3));
       const maxServNum = config.servList.length;
       if( index <= maxServNum ) {
-        const { code, info, players } = await queryServerInfo(config.servList[index-1].ip, config.servList[index-1].port);
+        const { ip, port } = await convServerAddr(config.servList[index-1].ip);
+        const { code, info, players } = await queryServerInfo(ip, config.servList[index-1].port);
         const output = servInfo2Text(code, info, players);
         output.children.push( h('p', `connect ${config.servList[index-1].ip}:${config.servList[index-1].port}`));
         session.send( output );
@@ -786,7 +819,7 @@ export function apply(ctx: Context, config: Config) {
         }
         anneInfo.children.push(
           h('p', `分数：${players[0].points}    排名：${players[0].rank}/${table[0].table_rows}`),
-          h('p', `游玩时间：${time2Read(players[0].playtime*60)}`),
+          h('p', `游玩时间：${secondFormat(players[0].playtime*60, {onlyHour: true})}`),
           h('p', `最后上线：${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()}`)
         );
         session.send(anneInfo);
@@ -874,9 +907,6 @@ export function apply(ctx: Context, config: Config) {
     session.send(msg);
   })
 
-
-
-
   ctx.command('l4d2/rcon <server:string> <cmd:text>', '使用Rcon控制服务器', { authority: 4 })
   .usage('rcon ?f cmd')
   .example('rcon 2f status 连接订阅的服务器2并发送status指令')
@@ -905,11 +935,6 @@ export function apply(ctx: Context, config: Config) {
       return 'rcon连不上喵qwq'
     }
   })
-}
-
-function checkIpValid(ip:string) {
-  const ipReg = /^((2(5[0-5]|[0-4]\d))|[0-1]?\d{1,2})(\.((2(5[0-5]|[0-4]\d))|[0-1]?\d{1,2})){3}$/;
-  return ipReg.test(ip);
 }
 
 
@@ -963,7 +988,7 @@ function servInfo2Text( code: number, info: Info, players: Player[] ):h {
 
 function convSteamID( sid: string ) {
   const reg1 = /^STEAM_[0,1]:[0,1]:\d+$/;
-  const reg2 = /^76561198[0-9]{9}$/;
+  const reg2 = /^7656119[0-9]{10}$/;
   if( reg1.test(sid) ) { // SteamID
     const sp = sid.split(':');
     const iServer:bigint = BigInt(sp[1]);
@@ -979,12 +1004,13 @@ function convSteamID( sid: string ) {
 }
 
 async function convServerAddr( url: string ) {
+  const ipReg = /^((2(5[0-5]|[0-4]\d))|[0-1]?\d{1,2})(\.((2(5[0-5]|[0-4]\d))|[0-1]?\d{1,2})){3}$/;
   const addr = url.split(":");
   let ip = addr[0];
   let port:number | string = 27015;
   addr[1] && (port = addr[1]);
 
-  if (!checkIpValid(ip)) {  // dns
+  if (!ipReg.test(ip)) { // dns
     const resolver = new promises.Resolver();
     const addresses = await resolver.resolve4(ip).catch(() => {logger.error(`[l4d2 Error]:DNS Resolve Failed`)});
     if (addresses && addresses.length) {

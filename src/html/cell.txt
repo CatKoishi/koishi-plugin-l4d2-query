@@ -2,16 +2,11 @@
             <div class="cellinside">
                 <div class="servTitle">#{ServerName}#</div>
                 <div calss="servInfo">
-                    <p class="blue">#{MapName}#</p>
-                    <p class="green">
-                        #{Player1}#<br>
-                        #{Player2}#<br>
-                        #{Player3}#<br>
-                        #{Player4}#
-                    </p>
+                    <p class="green">#{Player1}#<br>#{Player2}#<br>#{Player3}#<br>#{Player4}#</p>
                 </div>
                 <div class="servStatus">
                     <span class="info">#{PlayerNum}#/#{MaxPlayer}#</span>
+                    <span class="blue">#{MapName}#</span>
                     <img src="#{SVG}#" style="width: 16px;margin-top:2px;margin-bottom:-5px;">
                 </div>
             </div>

@@ -3,43 +3,16 @@ export function secondFormat(
   props?: { inputMillisecond?: boolean; onlyHour?: boolean }
 ): string {
   second = Math.round(props?.inputMillisecond ? second / 1000 : second);
+  if ( props?.onlyHour ) {
+    const h = (second / 3600).toFixed(1);
+    return `${h}h`
+  }
   if (second < 60) {
     const sStr = second < 10 ? `0${second}` : second;
     return `${sStr}s`;
-  }
-  if ( props?.onlyHour ) {
-    if( second < 3600 ) { return '< 1h' }
-    const h = Math.floor(second / 3600);
-    return `${h}h`
-  }
-  if (second >= 3600) {
-    const h = Math.floor(second / 3600);
-    const m = Math.floor((second % 3600) / 60);
-    const s = second % 60;
-    const hStr = h < 10 ? `0${h}` : h;
-    const mStr = m < 10 ? `0${m}` : m;
-    const sStr = s < 10 ? `0${s}` : s;
-    return `${hStr}h ${mStr}m ${sStr}s`;
   } else {
-    const m = Math.floor(second / 60);
-    const s = second % 60;
-    const mStr = m < 10 ? `0${m}` : m;
-    const sStr = s < 10 ? `0${s}` : s;
-    return `${mStr}m ${sStr}s`;
-  }
-}
-
-export function time2Read (
-  second: number,
-  props?: {inputMillisecond?: boolean}
-): string {
-  second = Math.round(props?.inputMillisecond ? second / 1000 : second);
-  if(second < 3600) {
-    return "< 1小时"
-  }
-  else {
-    const h = (second/3600).toFixed(1);
-    return `${h}小时`;
+    const mStr = (second / 60).toFixed(1);
+    return `${mStr}m`;
   }
 }
 
@@ -91,7 +64,7 @@ export function timeFormat1(date:Date) {  // YYYY/MM/DD HH:MM
   const year = date.getFullYear();
   const month =  date.getMonth() + 1;
   const day = date.getDate();
-  const hour = date.getHours();
-  const minute = date.getMinutes();
+  const hour = date.getHours().toString().padStart(2, '0');
+  const minute = date.getMinutes().toString().padStart(2, '0');
   return year + '/' + month + '/' + day + ' ' + hour + ':' + minute;
 }
