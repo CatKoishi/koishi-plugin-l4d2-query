@@ -23,6 +23,8 @@ export const name = 'l4d2-query'
 // 群车预约, 报名接力(完善)
 // 代码稳定性提升(缺少测试)
 // 制作VTF(长期)
+// 服务器列表简洁模式
+// 服务器列表生成速度提升
 
 export const usage = `
 ## ⚠️从0.6.2之前旧版本升级需要移除配置后再添加新配置, 否则会有bug⚠️
@@ -119,7 +121,7 @@ export const Config: Schema<Config> = Schema.intersect([
     }),
     Schema.object({}),
   ]),
-  
+
   Schema.object({
     servList: Schema.array(Schema.object({
       ip: Schema.string().default('8.8.8.8'),
@@ -165,7 +167,7 @@ export const Config: Schema<Config> = Schema.intersect([
   }).description('开启事件系统')
 
 
-]).i18n({ 
+]).i18n({
   'zh-CN': require('./locales/zh-CN'),
 });
 
@@ -221,7 +223,7 @@ export function apply(ctx: Context, config: Config) {
       });
       return `已创建编号为 ${result.index} 的事件预约`
     })
-  
+
     ctx.command('event.del <eventNum:posint>', '删除某编号事件', { authority: 2 })
     .channelFields(['id'])
     .usage('指令后加事件编号')
@@ -239,16 +241,16 @@ export function apply(ctx: Context, config: Config) {
       if( eventList.length === 0 ) {
         return `不存在编号为${eid}的事件`
       }
-  
+
       if(eventList[0].eventGroup.channelID != session.channel.id) {
         return '该事件不属于此群'
       }
-  
+
       await session.send(`是否删除${eid}.${eventList[0].eventName}-${timeFormat1(eventList[0].eventDate)}\r\n输入 y 确认`)
       // comfirm
       const input = await session.prompt(10000);
       if(!input) return '输入超时'
-  
+
       if(input.includes('y')) {
         await ctx.database.remove('gameReservation', {index: eid});
         return '已删除'
@@ -256,7 +258,7 @@ export function apply(ctx: Context, config: Config) {
         return '已取消删除'
       }
     })
-  
+
     ctx.command('Event/列举事件', '输出未完成的事件列表')
     .channelFields(['id'])
     .action(async ({session}) => {
@@ -264,10 +266,10 @@ export function apply(ctx: Context, config: Config) {
         {isExpired: false},
         ['index', 'eventDate', 'eventName', 'eventGroup']
       );
-  
+
       if(session.channel === undefined)
         return '请在群聊中使用本指令'
-  
+
       if( eventList.length === 0 ) {
         return '当前没有未完成的事件呢'
       }
@@ -374,7 +376,7 @@ export function apply(ctx: Context, config: Config) {
 
       return `已更新事件 ${eid}.${eventList[0].eventName} 的说明`
     })
-  
+
     ctx.command('Event/查看事件 <eventNum:posint>', '输出某编号事件的详情')
     .usage('指令后加事件编号')
     .example('查看事件 3 | 查看3号事件的信息')
@@ -392,11 +394,11 @@ export function apply(ctx: Context, config: Config) {
         h('p', `${eid}. ${eventList[0].eventName}`),
         h('p', `${timeFormat1(eventList[0].eventDate)}`)
       );
-      
+
       if(eventList[0].eventDesc != '') {
         msg.children.push(h('p', `详情：${eventList[0].eventDesc}`));
       }
-      
+
       if(eventList[0].eventParticipant.user.length > 0) {
         eventList[0].eventParticipant.user.forEach(item => {
           msg.children.push(h('p', `☑️${item.nickname}`));
@@ -407,10 +409,10 @@ export function apply(ctx: Context, config: Config) {
           msg.children.push(h('p', `🟪${item.nickname}`));
         })
       }
-  
+
       session.send(msg);
     })
-  
+
     ctx.command('Event/参加事件 <eventNum:posint>', '参加事件')
     .userFields(['id'])
     .channelFields(['id'])
@@ -430,13 +432,13 @@ export function apply(ctx: Context, config: Config) {
       } else if ( eventList[0].isExpired === true ) {
         return '事件已过期'
       }
-  
+
       if(eventList[0].eventGroup.channelID != session.channel.id) {
         return '该事件不属于本群'
       }
-  
+
       let curUser:platformUser = { uid:session.user.id, nickname:session.author.name };
-      
+
       if( (eventList[0].eventParticipant.user.find(obj => obj.uid == curUser.uid) != undefined) || (eventList[0].extraParticipant.user.find(obj => obj.uid == curUser.uid) != undefined)) {
         return '请勿重复参加'
       }
@@ -457,7 +459,7 @@ export function apply(ctx: Context, config: Config) {
         return '成功加入事件'
       }
     })
-  
+
     ctx.command('Event/退出事件 <eventNum:posint>', '退出事件')
     .userFields(['id'])
     .channelFields(['id'])
@@ -477,32 +479,32 @@ export function apply(ctx: Context, config: Config) {
       } else if ( eventList[0].isExpired === true ) {
         return '事件已过期'
       }
-  
+
       if(eventList[0].eventGroup.channelID != session.channel.id) {
         return '该事件不属于本群'
       }
-  
+
       let curUser:platformUser = { uid:session.user.id, nickname:session.author.name };
-      
+
       let indexA = eventList[0].eventParticipant.user.findIndex(item => item.uid === curUser.uid);
       if(indexA != -1) {
         eventList[0].eventParticipant.user.splice(indexA, 1);
         if(eventList[0].extraParticipant.user.length > 0) {  // 存在替补
           var shift:platformUser = eventList[0].extraParticipant.user.shift();
           eventList[0].eventParticipant.user.push(shift);
-  
+
           await ctx.database.set('gameReservation',
             { index: eid },
             { eventParticipant: eventList[0].eventParticipant, extraParticipant:eventList[0].extraParticipant }
           )
-  
+
           return `已退出该事件，替补@${shift.nickname} 已自动加入`
         } else {
           await ctx.database.set('gameReservation',
             { index: eid },
             { eventParticipant: eventList[0].eventParticipant }
           )
-          
+
           return `已退出该事件`
         }
       }
@@ -517,7 +519,7 @@ export function apply(ctx: Context, config: Config) {
       }
       return '未参加此事件'
     })
-  
+
     /* Execute Every 10 minutes */
     ctx.cron('*/10 * * * *', async () => {
       // get not expired event notice
@@ -561,7 +563,7 @@ export function apply(ctx: Context, config: Config) {
     const { code, info, players } = await queryServerInfo(ip, port);
     session.send( servInfo2Text(code, info, players) );
   })
-  
+
 
   ctx.command('l4d2/服务器', '输出订阅服务器的图片')
   .action(async ({session}, ) => {
@@ -596,7 +598,7 @@ export function apply(ctx: Context, config: Config) {
       } else {
         theme = themeMap.get(config.themeType).split(':');
       }
-      
+
       workhtml = workhtml
       .replaceAll("#{themeBG}#", theme[0])
       .replaceAll("#{themeColor}#", theme[1])
@@ -632,9 +634,9 @@ export function apply(ctx: Context, config: Config) {
           .replace("#{SVG}#", "u.svg")
         }
       }
-      
+
       fs.writeFileSync(path.resolve(__dirname, "./html/index.html"), workhtml);
-      
+
       let pageWidthIndex:number[] = [428, 606, 898];
       let pageWidth:number;
       if(maxServNum <= 3)
@@ -655,14 +657,14 @@ export function apply(ctx: Context, config: Config) {
       }
       await page.close();
       return msg;
-      
+
     } catch(error) {
       logger.error(`[l4d2 Error]:\r\n`+error);
       return '出错了ww'
     }
-    
+
   });
-  
+
   const regexp = /^服务器[1-9]\d*$/;
   ctx.middleware( async (session, _) => {
     const input = session.content;
@@ -691,14 +693,14 @@ export function apply(ctx: Context, config: Config) {
     .usage('后面加可选项 -n+服务器名称, *可做通配符; -i+服务器IP; -t+服务器tag; -a 寻找所有服; -e 寻找空服; -r+地区代码; -m+查询数量')
     .example('找服 anne -m 10 --> 返回最多10个tag含有“anne”的服务器')
     .action(async ({session, options}, _) => {
-  
+
       if(!config.steamWebApi)
         return '请设置Steam API Key'
-  
+
       const qUrlPre:string = `https://api.steampowered.com/IGameServersService/GetServerList/v1/?key=${config.steamWebApi}`;
       const qUrlSuf:string = `&limit=${options.maxQuery}`
       let qUrlFilter:string = '&filter=appid\\550'
-  
+
       // 3个主要查询条件
       if('servTag' in options)
         qUrlFilter = qUrlFilter.concat(`\\gametype\\${options.servTag}`);
@@ -706,7 +708,7 @@ export function apply(ctx: Context, config: Config) {
         qUrlFilter = qUrlFilter.concat(`\\name_match\\${options.servName}`);
       if('servIp' in options)
         qUrlFilter = qUrlFilter.concat(`\\gameaddr\\${options.servIp}`);
-  
+
       // 2个可选查询条件
       if (!options.ignorePlayer) {
         if(options.isEmpty) {
@@ -717,10 +719,10 @@ export function apply(ctx: Context, config: Config) {
       }
       if(options.region)
         qUrlFilter = qUrlFilter.concat(`\\region\\${options.region}`);
-  
+
       const qUrl = qUrlPre+qUrlFilter+qUrlSuf;
       let qResponse;
-  
+
       try {
         if( config.useProxy === false ) {
           qResponse = await ctx.http.get(qUrl);
@@ -731,10 +733,10 @@ export function apply(ctx: Context, config: Config) {
         logger.error(`[l4d2 Error]:\r\n`+error);
         return '网络错误！'
       }
-  
+
       if(qResponse.response.servers === undefined)
         return '未找到符合条件的服务器'
-  
+
       const result = h("figure");
       for( const serv of qResponse.response.servers) {
         const iServName:string = serv.name;
@@ -747,7 +749,7 @@ export function apply(ctx: Context, config: Config) {
       await session.send(result);
     });
   }
-  
+
   ctx.command('l4d2/Steam绑定 <steamid:string>', '绑定Anne查询,数据查询使用的SteamID')
   .userFields(['id', 'steamid'])
   .usage('指令后填写您的SteamID')
@@ -783,7 +785,7 @@ export function apply(ctx: Context, config: Config) {
         password: config.dbPassword,
         database: config.dbName
       });
-      
+
       try {
         let players: mysql.QueryResult;
         let steamid: string;
@@ -823,7 +825,7 @@ export function apply(ctx: Context, config: Config) {
           h('p', `最后上线：${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()}`)
         );
         session.send(anneInfo);
-        
+
       } catch (error) {
         logger.error(`[l4d2 Error]:\r\n`+error);
         return '找不到qwq, 是不是输错啦?'
@@ -869,7 +871,7 @@ export function apply(ctx: Context, config: Config) {
       return '网络错误！'
     }
 
-    
+
     const sNickname = qResponseA.response.players[0].personaname;
 
     const sPlayTime = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.TotalPlayTime.Total'); // s
@@ -877,7 +879,7 @@ export function apply(ctx: Context, config: Config) {
     const sVersusWon = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.GamesWon.Versus');
     const sVersusLost = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.GamesLost.Versus');
 
-    const sPistolKill = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.pistol.Kills.Total'); 
+    const sPistolKill = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.pistol.Kills.Total');
     const sMagnumKill = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.pistol_magnum.Kills.Total');
 
     const sSmgKill = qResponse.playerstats.stats.find(obj => obj.name === 'Stat.smg_silenced.Kills.Total');
@@ -975,7 +977,7 @@ function servInfo2Text( code: number, info: Info, players: Player[] ):h {
       h('p', `地图：${info.map}`),
       h('p', `玩家：${info.players}/${info.max_players}`)
     );
-    
+
     for(index = 0; index < info.players; index++) {
       servInfo.children.push( h('p', `[${players[index].score}] | ${secondFormat(players[index].duration)} | ${players[index].name}`) );
     }
