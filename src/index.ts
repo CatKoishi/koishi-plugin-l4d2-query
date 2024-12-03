@@ -1,4 +1,4 @@
-import { Context, Schema, h, Session, Logger, Bot } from 'koishi'
+import { Context, Schema, h, Logger } from 'koishi'
 
 import {} from 'koishi-plugin-puppeteer';
 import { Page } from 'puppeteer-core';
@@ -13,7 +13,8 @@ import { SourceQuerySocket } from 'source-server-query';
 import mysql from 'mysql2/promise';
 import Rcon from 'rcon-srcds';
 
-import { Info, Player, QueryServerInfo } from './types/a2s';
+import { A2SResult, Info, Player, QueryServerInfo } from './types/a2s';
+import { renderHtml } from './utils/render'
 import { secondFormat, str2Time, timeFormat1 } from './utils/timeFormat';
 import { _Reservation, platformUser, platformUserList, platformGroup, initDatabase } from './database';
 
@@ -72,9 +73,10 @@ export const inject = {
   ]
 }
 
-const logger = new Logger('[l4d2]>> ');
+const logger = new Logger('[L4D2]>> ');
 
 export interface Config {
+  queryLimit?: number,
   servList?: {
     ip: string
     port: number
@@ -107,69 +109,68 @@ export interface Config {
 
 export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
-    themeType: Schema.union(['Normal', 'Dark', 'Neon', 'Wind']).default('Normal'),
-    nightMode: Schema.boolean().default(false),
+    themeType: Schema.union(['Normal', 'Dark', 'Neon', 'Wind']).default('Normal').description('主题样式'),
+    nightMode: Schema.boolean().default(false).description('自动夜间模式'),
   }).description('主题设置'),
   Schema.union([
     Schema.object({
       nightMode: Schema.const(true).required(),
       nightConfig: Schema.array(Schema.object({
-        nightStart: Schema.number().default(21).min(17).max(23),
-        nightEnd: Schema.number().default(7).min(5).max(15),
-        nightOLED: Schema.boolean().default(false),
-      })).min(1).max(1).role('table'),
+        nightStart: Schema.number().default(21).min(17).max(23).description('开始时间'),
+        nightEnd: Schema.number().default(7).min(5).max(15).description('结束时间'),
+        nightOLED: Schema.boolean().default(false).description('启用OLED夜间模式'),
+      })).min(1).max(1).role('table').description('自定义夜间模式设置'),
     }),
     Schema.object({}),
   ]),
 
   Schema.object({
+    queryLimit: Schema.number().min(1).max(32).default(4).description('并发查询限制'),
     servList: Schema.array(Schema.object({
-      ip: Schema.string().default('8.8.8.8'),
-      port: Schema.number().default(27015).min(10).max(65535),
-      rconEnable: Schema.boolean().default(false),
-      rconPort: Schema.number().default(27015).min(10).max(65535),
-      rconPassword: Schema.string().role('secret')
-    })).role('table'),
+      ip: Schema.string().default('8.8.8.8').description('服务器IP'),
+      port: Schema.number().default(27015).min(10).max(65535).description('服务器端口'),
+      rconEnable: Schema.boolean().default(false).description('是否启用RCON'),
+      rconPort: Schema.number().default(27015).min(10).max(65535).description('RCON端口'),
+      rconPassword: Schema.string().role('secret').description('RCON密码')
+    })).role('table').description('订阅服务器列表'),
   }).description('服务器订阅'),
 
   Schema.object({
-    useSearch: Schema.boolean().default(false),
+    useSearch: Schema.boolean().default(false).description('启用游戏查找功能'),
   }).description('找服设置'),
   Schema.union([
     Schema.object({
       useSearch: Schema.const(true).required(),
-      steamWebApi: Schema.string().required(),
+      steamWebApi: Schema.string().required().description('Steam Web API'),
       useProxy: Schema.union([
         Schema.const(false).description('直连'),
         Schema.string().default('http://1.1.1.1:7897').description('使用代理')
-      ]),
+      ]).description('API连接方式'),
     }),
     Schema.object({}),
   ]),
 
   Schema.object({
-    useAnne: Schema.boolean().default(false),
-  }).description('Anne数据库设置'),
+    useAnne: Schema.boolean().default(false).description('启用Anne药役查询功能'),
+  }).description('Anne查询设置'),
   Schema.union([
     Schema.object({
       useAnne: Schema.const(true).required(),
-      dbIp: Schema.string().required(),
-      dbPort: Schema.number().min(10).max(65535).required(),
-      dbUser: Schema.string().required(),
-      dbPassword: Schema.string().role('secret').required(),
-      dbName: Schema.string().required()
+      dbIp: Schema.string().required().description('Anne数据库地址'),
+      dbPort: Schema.number().min(10).max(65535).required().description('Anne数据库端口'),
+      dbUser: Schema.string().required().description('数据库用户名'),
+      dbPassword: Schema.string().role('secret').required().description('数据库密码'),
+      dbName: Schema.string().required().description('表名')
     }),
     Schema.object({}),
   ]).collapse(),
 
   Schema.object({
-    useEvent: Schema.boolean().default(false).experimental(),
-  }).description('开启事件系统')
+    useEvent: Schema.boolean().default(false).description('开启事件预约系统'),
+  }).description('事件系统')
 
 
-]).i18n({
-  'zh-CN': require('./locales/zh-CN'),
-});
+]);
 
 
 // themeBG : fontColor : themeInner : themeBorder
@@ -181,7 +182,7 @@ const themeMap = new Map([
   ["OLED",   "#000000:#D6D6D6:#000000:#1F1F1F"],
 ]);
 
-export function apply(ctx: Context, config: Config) {
+export async function apply(ctx: Context, config: Config) {
   // write your plugin here
   // ctx.server.all('/test', item => {
   //   item.body = 'hello koishi'
@@ -549,7 +550,7 @@ export function apply(ctx: Context, config: Config) {
   }
 
 
-
+  const { default: pLimit } = await import('p-limit')
 
   ctx.command('l4d2', '查看求生之路指令详情')
 
@@ -574,19 +575,7 @@ export function apply(ctx: Context, config: Config) {
       return '好像, 还没有订阅服务器呢~'
 
     try {
-      let templateHTML = fs.readFileSync(path.resolve(__dirname, "./html/template.txt"), "utf-8");
-      let templateCELL = fs.readFileSync(path.resolve(__dirname, "./html/cell.txt"), "utf-8");
-      let workhtml = templateHTML;
-
-      var index:number;
-
-      if ( maxServNum === 1 ) {
-        workhtml = workhtml.replace("#{cellArrange}#", "auto");
-      } else if ( maxServNum === 2 ) {
-        workhtml = workhtml.replace("#{cellArrange}#", "auto auto");
-      } else {
-        workhtml = workhtml.replace("#{cellArrange}#", "auto auto auto");
-      }
+      let index: number;
       const date = new Date();
       let theme:string[];
       if ( config.nightMode && (date.getHours() >= config.nightConfig[0].nightStart || date.getHours() <= config.nightConfig[0].nightEnd) ) {
@@ -598,53 +587,22 @@ export function apply(ctx: Context, config: Config) {
       } else {
         theme = themeMap.get(config.themeType).split(':');
       }
+      
+      let i = 0;
+      let promise;
+      promise = config.servList.map(addr => convServerAddr(addr.ip, true))
+      const servAddr = await Promise.all(promise);
 
-      workhtml = workhtml
-      .replaceAll("#{themeBG}#", theme[0])
-      .replaceAll("#{themeColor}#", theme[1])
-      .replaceAll("#{themeInner}#", theme[2])
-      .replaceAll("#{themeBorder}#", theme[3])
+      const limit = pLimit(config.queryLimit);
+      promise = config.servList.map(addr => limit(() => queryServerInfo(servAddr[i++].ip, addr.port)))
+      const a2s:A2SResult[] = await Promise.all(promise);
 
-      for(index=0; index<maxServNum; index++) {
-        const { ip, port } = await convServerAddr(config.servList[index].ip);
-        const { code, info, players } = await queryServerInfo(ip, config.servList[index].port);
-        if(code === 0) {
-          workhtml = workhtml
-          .replace("<!-- ##{SERVER_CELL}## -->", templateCELL)
-          .replace("#{ServerName}#", `${index+1}. ${info.name}`)
-          .replace("#{MapName}#", info.map)
-          .replace("#{Player1}#", (players[0] === undefined)? " ":`${players[0].name} | ${secondFormat(players[0].duration)}`)
-          .replace("#{Player2}#", (players[1] === undefined)? " ":`${players[1].name} | ${secondFormat(players[1].duration)}`)
-          .replace("#{Player3}#", (players[2] === undefined)? " ":`${players[2].name} | ${secondFormat(players[2].duration)}`)
-          .replace("#{Player4}#", (players[3] === undefined)? " ":`${players[3].name} | ${secondFormat(players[3].duration)}`)
-          .replace("#{PlayerNum}#", info.players.toString())
-          .replace("#{MaxPlayer}#", info.max_players.toString())
-          .replace("#{SVG}#", `${info.environment}.svg`)
-        } else {
-          workhtml = workhtml
-          .replace("<!-- ##{SERVER_CELL}## -->", templateCELL)
-          .replace("#{ServerName}#", `${index+1}. 无响应`)
-          .replace("#{MapName}#", " ")
-          .replace("#{Player1}#", " ")
-          .replace("#{Player2}#", " ")
-          .replace("#{Player3}#", " ")
-          .replace("#{Player4}#", " ")
-          .replace("#{PlayerNum}#", "0")
-          .replace("#{MaxPlayer}#", "0")
-          .replace("#{SVG}#", "u.svg")
-        }
-      }
+      const html = renderHtml(theme, maxServNum, a2s)
 
-      fs.writeFileSync(path.resolve(__dirname, "./html/index.html"), workhtml);
+      fs.writeFileSync(path.resolve(__dirname, "./html/index.html"), html);
 
-      let pageWidthIndex:number[] = [428, 606, 898];
-      let pageWidth:number;
-      if(maxServNum <= 3)
-        pageWidth = pageWidthIndex[maxServNum-1];
-      else
-        pageWidth = pageWidthIndex[2];
       page = await ctx.puppeteer.page();
-      await page.setViewport({ width: pageWidth, height: 5000 });
+      await page.setViewport({ width: 1000, height: 5000 });
       await page.goto(`file:///${path.resolve(__dirname, "./html/index.html")}`);
       await page.waitForSelector("#body");
       const element = await page.$("#body");
@@ -659,7 +617,7 @@ export function apply(ctx: Context, config: Config) {
       return msg;
 
     } catch(error) {
-      logger.error(`[l4d2 Error]:\r\n`+error);
+      logger.error(`Error:\r\n`+error);
       return '出错了ww'
     }
 
@@ -730,7 +688,7 @@ export function apply(ctx: Context, config: Config) {
           qResponse = await ctx.http.get(qUrl, { proxyAgent: config.useProxy });
         }
       } catch (error) {
-        logger.error(`[l4d2 Error]:\r\n`+error);
+        logger.error(`Error:\r\n`+error);
         return '网络错误！'
       }
 
@@ -827,7 +785,7 @@ export function apply(ctx: Context, config: Config) {
         session.send(anneInfo);
 
       } catch (error) {
-        logger.error(`[l4d2 Error]:\r\n`+error);
+        logger.error(`[Error]:\r\n`+error);
         return '找不到qwq, 是不是输错啦?'
       }
     })
@@ -867,7 +825,7 @@ export function apply(ctx: Context, config: Config) {
         qResponseA = await ctx.http.get(qUrlA, { proxyAgent: config.useProxy });
       }
     } catch (error) {
-      logger.error(`[l4d2 Error]: `+error);
+      logger.error(`Error: `+error);
       return '网络错误！'
     }
 
@@ -933,7 +891,7 @@ export function apply(ctx: Context, config: Config) {
       session.send(`指令执行成功\r\n${status}`);
       remote.disconnect();
     } catch(error) {
-      logger.error(`[l4d2 Error]:\r\n`+error);
+      logger.error(`Error:\r\n`+error);
       return 'rcon连不上喵qwq'
     }
   })
@@ -1005,12 +963,15 @@ function convSteamID( sid: string ) {
   }
 }
 
-async function convServerAddr( url: string ) {
+async function convServerAddr( url: string, noPort: boolean = false) {
   const ipReg = /^((2(5[0-5]|[0-4]\d))|[0-1]?\d{1,2})(\.((2(5[0-5]|[0-4]\d))|[0-1]?\d{1,2})){3}$/;
-  const addr = url.split(":");
-  let ip = addr[0];
-  let port:number | string = 27015;
-  addr[1] && (port = addr[1]);
+  let ip = url;
+  let port:number = 27015;
+  if( !noPort ) {
+    const addr = url.split(":");
+    ip = addr[0];
+    addr[1] && (port = Number(addr[1]));
+  }
 
   if (!ipReg.test(ip)) { // dns
     const resolver = new promises.Resolver();
@@ -1021,4 +982,5 @@ async function convServerAddr( url: string ) {
   }
 
   return {ip, port};
+  
 }

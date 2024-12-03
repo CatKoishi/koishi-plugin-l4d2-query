@@ -28,13 +28,10 @@ declare type Info = {
 };
 
 export declare type A2SResult = {
-  success: boolean;
-  msg: {
-    info: string;
-    players: string;
-  };
-  info?: Info;
-  players?: Player[];
+  code: number;
+  info: Info;
+  players: Player[];
+  errMsg: Error;
 };
 
 declare module "source-server-query" {

@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-l4d2-query",
   "description": "manage your l4d2 server",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -47,6 +47,7 @@
   "dependencies": {
     "source-server-query": "^3.0.3",
     "rcon-srcds": "^2.1.0",
-    "mysql2": "^3.11.3"
+    "mysql2": "^3.11.3",
+    "p-limit": "^6.1.0"
   }
 }
