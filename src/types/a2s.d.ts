@@ -54,8 +54,10 @@ declare module "source-server-query" {
 
 export declare type QueryServerInfo = (
   ip: string,
-  port: string | number
+  port: string | number,
+  qPlayers: boolean = true
 ) => Promise<
   | { code: 0; info: Info; players: Player[]; errMsg: null }
+  | { code: 0; info: Info; players: null; errMsg: null }
   | { code: 1; info: null; players: null; errMsg: Error }
 >;

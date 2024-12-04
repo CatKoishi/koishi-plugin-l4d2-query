@@ -24,8 +24,6 @@ export const name = 'l4d2-query'
 // 群车预约, 报名接力(完善)
 // 代码稳定性提升(缺少测试)
 // 制作VTF(长期)
-// 服务器列表简洁模式
-// 服务器列表生成速度提升
 
 export const usage = `
 ## ⚠️从0.6.2之前旧版本升级需要移除配置后再添加新配置, 否则会有bug⚠️
@@ -77,6 +75,7 @@ const logger = new Logger('[L4D2]>> ');
 
 export interface Config {
   queryLimit?: number,
+  listStyle?: string,
   servList?: {
     ip: string
     port: number
@@ -119,12 +118,13 @@ export const Config: Schema<Config> = Schema.intersect([
         nightStart: Schema.number().default(21).min(17).max(23).description('开始时间'),
         nightEnd: Schema.number().default(7).min(5).max(15).description('结束时间'),
         nightOLED: Schema.boolean().default(false).description('启用OLED夜间模式'),
-      })).min(1).max(1).role('table').description('自定义夜间模式设置'),
+      })).min(1).max(1).role('table').description('自定义夜间模式'),
     }),
     Schema.object({}),
   ]),
 
   Schema.object({
+    listStyle: Schema.union(['normal', 'lite', 'text']).default('normal').description('服务器列表输出样式'),
     queryLimit: Schema.number().min(1).max(32).default(4).description('并发查询限制'),
     servList: Schema.array(Schema.object({
       ip: Schema.string().default('8.8.8.8').description('服务器IP'),
@@ -587,17 +587,22 @@ export async function apply(ctx: Context, config: Config) {
       } else {
         theme = themeMap.get(config.themeType).split(':');
       }
-      
-      let i = 0;
-      let promise;
-      promise = config.servList.map(addr => convServerAddr(addr.ip, true))
-      const servAddr = await Promise.all(promise);
 
+      let qPlayers = (config.listStyle === 'normal');
       const limit = pLimit(config.queryLimit);
-      promise = config.servList.map(addr => limit(() => queryServerInfo(servAddr[i++].ip, addr.port)))
-      const a2s:A2SResult[] = await Promise.all(promise);
+      const a2s:A2SResult[] = await Promise.all( config.servList.map((server, index) => limit(async ()=>{
+        const resolve = await convServerAddr(server.ip, true);
+        return await queryServerInfo(resolve.ip, config.servList[index].port, qPlayers);
+      })));
 
-      const html = renderHtml(theme, maxServNum, a2s)
+      const html = renderHtml(config.listStyle, theme, maxServNum, a2s)
+
+      if(config.listStyle === 'text') {
+        const msg = h("figure");
+        msg.children.push(h("message", html));
+        await session.send(msg);
+        return;
+      }
 
       fs.writeFileSync(path.resolve(__dirname, "./html/index.html"), html);
 
@@ -624,7 +629,7 @@ export async function apply(ctx: Context, config: Config) {
   });
 
   const regexp = /^服务器[1-9]\d*$/;
-  ctx.middleware( async (session, _) => {
+  ctx.middleware( async (session, next) => {
     const input = session.content;
     if ( regexp.test(input) ) {
       const index = Number(input.substring(3));
@@ -635,7 +640,10 @@ export async function apply(ctx: Context, config: Config) {
         const output = servInfo2Text(code, info, players);
         output.children.push( h('p', `connect ${config.servList[index-1].ip}:${config.servList[index-1].port}`));
         session.send( output );
+        return;
       }
+    } else {
+      return next()
     }
   })
 
@@ -898,7 +906,7 @@ export async function apply(ctx: Context, config: Config) {
 }
 
 
-const queryServerInfo: QueryServerInfo = async (ip, port) => {
+const queryServerInfo: QueryServerInfo = async (ip, port, qPlayers = true) => {
   const query: SourceQuerySocket = new SourceQuerySocket();
   let errMsg: Error;
   const info = await query.info(ip, port).catch((err) => {
@@ -907,19 +915,27 @@ const queryServerInfo: QueryServerInfo = async (ip, port) => {
   });
 
   let players: Player[] | void;
-  if (!errMsg) {
+  if (qPlayers && !errMsg) {
     players = await query.players(ip, port).catch((err) => {
       logger.error(err);
       errMsg = err;
     });
   }
+
   if (errMsg) {
     return { code: 1, info: null, players: null, errMsg };
-  } else {
+  } else if (qPlayers) {
     return {
       code: 0,
       info: info as Info,
       players: players as Player[],
+      errMsg: null,
+    };
+  } else {
+    return {
+      code: 0,
+      info: info as Info,
+      players: null,
       errMsg: null,
     };
   }
@@ -982,5 +998,5 @@ async function convServerAddr( url: string, noPort: boolean = false) {
   }
 
   return {ip, port};
-  
+
 }
