@@ -5,7 +5,7 @@
     <img width="160" src="https://koishi.chat/logo.png" alt="logo">
   </a>
 
-# koishi-plugin-l4d2-query
+<h1><ruby>koishi-plugin-l4d2-query<rp>(</rp><rt>求生之路群聊助手</rt><rp>)</ruby></h1>
 
 [![npm](https://img.shields.io/npm/v/koishi-plugin-l4d2-query?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-l4d2-query)
 
@@ -53,9 +53,9 @@
 
 ### 1.1.1
 
-控制不住包体积了，摆烂了（
-订阅服务器输出增加纯文字(TEXT)和列表图片(LITE)样式
-修复导致其它基于中间件的插件无法工作的bug
+- 控制不住包体积了，摆烂了（
+- 订阅服务器输出增加纯文字(TEXT)和列表图片(LITE)样式
+- 修复导致其它基于中间件的插件无法工作的bug
 
 ### 1.1.0
 
