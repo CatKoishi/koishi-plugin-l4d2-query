@@ -630,11 +630,12 @@ export async function apply(ctx: Context, config: Config) {
 
   });
 
-  const regexp = /^服务器[1-9]\d*$/;
+  const regexp = /服务器[1-9]\d*$/;
   ctx.middleware( async (session, next) => {
     const input = session.content;
     if ( regexp.test(input) ) {
-      const index = Number(input.substring(3));
+      const txt = regexp.exec(input);
+      const index = Number(txt[0].substring(3));
       const maxServNum = config.servList.length;
       if( index <= maxServNum ) {
         const { ip, port } = await convServerAddr(config.servList[index-1].ip);
