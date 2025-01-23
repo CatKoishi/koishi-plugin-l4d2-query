@@ -21,7 +21,8 @@ import { _Reservation, platformUser, platformUserList, platformGroup, initDataba
 export const name = 'l4d2-query'
 
 // ToDo
-// 群车预约, 报名接力(完善)
+// 服务器分组
+// 服务器显示多于4个人数的图片
 // 代码稳定性提升(缺少测试)
 // 制作VTF(长期)
 
@@ -75,6 +76,7 @@ const logger = new Logger('[L4D2]>> ');
 
 export interface Config {
   queryLimit?: number,
+  outputIP?: boolean,
   listStyle?: string,
   servList?: {
     ip: string
@@ -125,6 +127,7 @@ export const Config: Schema<Config> = Schema.intersect([
 
   Schema.object({
     listStyle: Schema.union(['normal', 'lite', 'text']).default('normal').description('服务器列表输出样式'),
+    outputIP: Schema.boolean().default(true).description('查询服务器详情时是否输出服务器IP'),
     queryLimit: Schema.number().min(1).max(32).default(4).description('并发查询限制'),
     servList: Schema.array(Schema.object({
       ip: Schema.string().default('8.8.8.8').description('服务器IP'),
@@ -575,7 +578,6 @@ export async function apply(ctx: Context, config: Config) {
       return '好像, 还没有订阅服务器呢~'
 
     try {
-      let index: number;
       const date = new Date();
       let theme:string[];
       if ( config.nightMode && (date.getHours() >= config.nightConfig[0].nightStart || date.getHours() <= config.nightConfig[0].nightEnd) ) {
@@ -638,7 +640,9 @@ export async function apply(ctx: Context, config: Config) {
         const { ip, port } = await convServerAddr(config.servList[index-1].ip);
         const { code, info, players } = await queryServerInfo(ip, config.servList[index-1].port);
         const output = servInfo2Text(code, info, players);
-        output.children.push( h('p', `connect ${config.servList[index-1].ip}:${config.servList[index-1].port}`));
+        if(config.outputIP) {
+          output.children.push( h('p', `connect ${config.servList[index-1].ip}:${config.servList[index-1].port}`));
+        }
         session.send( output );
         return;
       }
@@ -947,9 +951,10 @@ function servInfo2Text( code: number, info: Info, players: Player[] ):h {
   let servInfo: h;
   if (code === 0) {
     servInfo = h('message',
-      h('p', `名称：${info.name}`),
-      h('p', `地图：${info.map}`),
-      h('p', `玩家：${info.players}/${info.max_players}`)
+      h('p', `名称:${info.name}`),
+      h('p', `游戏:${info.game}`),
+      h('p', `地图:${info.map}`),
+      h('p', `玩家:${info.players}/${info.max_players}`)
     );
 
     for(index = 0; index < info.players; index++) {
