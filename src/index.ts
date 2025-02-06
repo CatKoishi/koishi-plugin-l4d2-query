@@ -81,7 +81,6 @@ export interface Config {
   servList?: {
     ip: string
     port: number
-    rconEnable: boolean
     rconPort: number
     rconPassword: string
   }[],
@@ -131,9 +130,8 @@ export const Config: Schema<Config> = Schema.intersect([
     queryLimit: Schema.number().min(1).max(32).default(4).description('并发查询限制'),
     servList: Schema.array(Schema.object({
       ip: Schema.string().default('8.8.8.8').description('服务器IP'),
-      port: Schema.number().default(27015).min(10).max(65535).description('服务器端口'),
-      rconEnable: Schema.boolean().default(false).description('是否启用RCON'),
-      rconPort: Schema.number().default(27015).min(10).max(65535).description('RCON端口'),
+      port: Schema.number().default(27015).min(0).max(65535).description('服务器端口'),
+      rconPort: Schema.number().default(-1).min(-1).max(65535).description('RCON端口(-1关闭)'),
       rconPassword: Schema.string().role('secret').description('RCON密码')
     })).role('table').description('订阅服务器列表'),
   }).description('服务器订阅'),
@@ -569,13 +567,28 @@ export async function apply(ctx: Context, config: Config) {
   })
 
 
-  ctx.command('l4d2/服务器', '输出订阅服务器的图片')
-  .action(async ({session}, ) => {
+  ctx.command('l4d2/服务器 [maxPlayer:posint]', '输出订阅服务器的图片')
+  .action(async ({session}, servIndex) => {
     const maxServNum = config.servList.length;
     let page: Page;
 
     if(!maxServNum)
       return '好像, 还没有订阅服务器呢~'
+
+    if( servIndex ) {
+      if( servIndex <= 0 || servIndex > maxServNum )
+        return "服务器序号越界"
+
+      const { ip, port } = await convServerAddr(config.servList[servIndex-1].ip);
+      const { code, info, players } = await queryServerInfo(ip, config.servList[servIndex-1].port);
+      const output = servInfo2Text(code, info, players);
+      if(config.outputIP) {
+        output.children.push( h('p', `connect ${config.servList[servIndex-1].ip}:${config.servList[servIndex-1].port}`));
+      }
+      session.send( output );
+      return;
+
+    }
 
     try {
       const date = new Date();
@@ -894,7 +907,7 @@ export async function apply(ctx: Context, config: Config) {
 
     if(index > maxServNum || index < 1)
       return '没有这个服务器呢'
-    if(config.servList[index-1].rconEnable === false)
+    if(config.servList[index-1].rconPort < 0)
       return '该服务器未开启RCON功能！'
 
     const remote = new Rcon({host: config.servList[index-1].ip, port: config.servList[index-1].rconPort, encoding: 'utf8'});
