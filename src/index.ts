@@ -72,18 +72,28 @@ export const inject = {
   ]
 }
 
+declare type SVINFO = {
+  index: number;
+  group: string;
+  ip: string;
+  port: number;
+  rconPort: number;
+  rconPassword: string;
+}
+
+declare type SVGROUP = {
+  groupName: string;
+  servList: SVINFO[];
+}
+
+
 const logger = new Logger('[L4D2]>> ');
 
 export interface Config {
   queryLimit?: number,
   outputIP?: boolean,
   listStyle?: string,
-  servList?: {
-    ip: string
-    port: number
-    rconPort: number
-    rconPassword: string
-  }[],
+  servList?: SVINFO[],
 
   useSearch?: boolean,
   steamWebApi?: string,
@@ -129,6 +139,7 @@ export const Config: Schema<Config> = Schema.intersect([
     outputIP: Schema.boolean().default(true).description('查询服务器详情时是否输出服务器IP'),
     queryLimit: Schema.number().min(1).max(32).default(4).description('并发查询限制'),
     servList: Schema.array(Schema.object({
+      group: Schema.string(),
       ip: Schema.string().default('8.8.8.8').description('服务器IP'),
       port: Schema.number().default(27015).min(0).max(65535).description('服务器端口'),
       rconPort: Schema.number().default(-1).min(-1).max(65535).description('RCON端口(-1关闭)'),
@@ -551,6 +562,26 @@ export async function apply(ctx: Context, config: Config) {
   }
 
 
+  /*****************************************************************************************************************/
+
+  let groupList: SVGROUP[] = [{groupName:"服务器", servList:config.servList}];
+
+  config.servList.map( info => {
+    if ( info.group ) {
+      const nickname = info.group.replace(/\s+/g, '');
+      if ( nickname != "" ) {
+        const index = groupList.findIndex( obj => obj.groupName === nickname );
+
+        if( index != -1 ) {
+          groupList[index].servList.push(info);
+        } else {
+          groupList.push({ groupName: nickname, servList: [info] });
+        }
+      }
+    }
+  })
+
+
   const { default: pLimit } = await import('p-limit')
 
   ctx.command('l4d2', '查看求生之路指令详情')
@@ -566,90 +597,12 @@ export async function apply(ctx: Context, config: Config) {
     session.send( servInfo2Text(code, info, players) );
   })
 
-
-  ctx.command('l4d2/服务器 [maxPlayer:posint]', '输出订阅服务器的图片')
-  .action(async ({session}, servIndex) => {
-    const maxServNum = config.servList.length;
-    let page: Page;
-
-    if(!maxServNum)
-      return '好像, 还没有订阅服务器呢~'
-
-    if( servIndex ) {
-      if( servIndex <= 0 || servIndex > maxServNum )
-        return "服务器序号越界"
-
-      const { ip, port } = await convServerAddr(config.servList[servIndex-1].ip);
-      const { code, info, players } = await queryServerInfo(ip, config.servList[servIndex-1].port);
-      const output = servInfo2Text(code, info, players);
-      if(config.outputIP) {
-        output.children.push( h('p', `connect ${config.servList[servIndex-1].ip}:${config.servList[servIndex-1].port}`));
-      }
-      session.send( output );
-      return;
-
-    }
-
-    try {
-      const date = new Date();
-      let theme:string[];
-      if ( config.nightMode && (date.getHours() >= config.nightConfig[0].nightStart || date.getHours() <= config.nightConfig[0].nightEnd) ) {
-        if ( config.nightConfig[0].nightOLED ) {
-          theme = themeMap.get("OLED").split(':');
-        } else {
-          theme = themeMap.get("Dark").split(':');
-        }
-      } else {
-        theme = themeMap.get(config.themeType).split(':');
-      }
-
-      let qPlayers = (config.listStyle === 'normal');
-      const limit = pLimit(config.queryLimit);
-      const a2s:A2SResult[] = await Promise.all( config.servList.map((server, index) => limit(async ()=>{
-        const resolve = await convServerAddr(server.ip, true);
-        return await queryServerInfo(resolve.ip, config.servList[index].port, qPlayers);
-      })));
-
-      const html = renderHtml(config.listStyle, theme, maxServNum, a2s)
-
-      if(config.listStyle === 'text') {
-        const msg = h("figure");
-        msg.children.push(h("message", html));
-        await session.send(msg);
-        return;
-      }
-
-      fs.writeFileSync(path.resolve(__dirname, "./html/index.html"), html);
-
-      page = await ctx.puppeteer.page();
-      await page.setViewport({ width: 1000, height: 5000 });
-      await page.goto(`file:///${path.resolve(__dirname, "./html/index.html")}`);
-      await page.waitForSelector("#body");
-      const element = await page.$("#body");
-      let msg;
-      if(element) {
-        const imgBuf = await element.screenshot({encoding: "binary"});
-        msg = h.image(imgBuf, 'image/png');
-      } else {
-        msg = "Fail to capture screenshot.";
-      }
-      await page.close();
-      return msg;
-
-    } catch(error) {
-      logger.error(`Error:\r\n`+error);
-      return '出错了ww'
-    }
-
-  });
-
-  const regexp = /服务器[1-9]\d*$/;
   ctx.middleware( async (session, next) => {
-    const input = session.content;
-    if ( regexp.test(input) ) {
-      const txt = regexp.exec(input);
-      const index = Number(txt[0].substring(3));
+    const input = session.content.replace(/<.+\/>\s+/, '');
+    
+    if ( /服务器\s?[1-9]\d*$/.test(input) ) { // 服务器1 | 服务器 1
       const maxServNum = config.servList.length;
+      const index = Number(/[1-9]\d*/.exec(input));
       if( index <= maxServNum ) {
         const { ip, port } = await convServerAddr(config.servList[index-1].ip);
         const { code, info, players } = await queryServerInfo(ip, config.servList[index-1].port);
@@ -660,8 +613,69 @@ export async function apply(ctx: Context, config: Config) {
         session.send( output );
         return;
       }
+    }
+
+    const group = groupList.find( group => group.groupName === input);
+
+    if( group ) {
+      const maxServNum = group.servList.length;
+
+      if(!maxServNum) {
+        return '此分组还没有订阅的服务器呢~';
+      }
+
+      try {
+        const date = new Date();
+        let theme:string[];
+        if ( config.nightMode && (date.getHours() >= config.nightConfig[0].nightStart || date.getHours() <= config.nightConfig[0].nightEnd) ) {
+          if ( config.nightConfig[0].nightOLED ) {
+            theme = themeMap.get("OLED").split(':');
+          } else {
+            theme = themeMap.get("Dark").split(':');
+          }
+        } else {
+          theme = themeMap.get(config.themeType).split(':');
+        }
+
+        let qPlayers = (config.listStyle === 'normal');
+        const limit = pLimit(config.queryLimit);
+        const a2s:A2SResult[] = await Promise.all( group.servList.map((server, index) => limit(async ()=>{
+          const resolve = await convServerAddr(server.ip, true);
+          return await queryServerInfo(resolve.ip, group.servList[index].port, qPlayers);
+        })));
+
+        const html = renderHtml(config.listStyle, theme, a2s)
+
+        if(config.listStyle === 'text') {
+          const msg = h("figure");
+          msg.children.push(h("message", html));
+          await session.send(msg);
+          return;
+        }
+
+        fs.writeFileSync(path.resolve(__dirname, "./html/index.html"), html);
+
+        let page = await ctx.puppeteer.page();
+        await page.setViewport({ width: 1000, height: 5000 });
+        await page.goto(`file:///${path.resolve(__dirname, "./html/index.html")}`);
+        await page.waitForSelector("#body");
+        const element = await page.$("#body");
+        let msg;
+        if(element) {
+          const imgBuf = await element.screenshot({encoding: "binary"});
+          msg = h.image(imgBuf, 'image/png');
+        } else {
+          msg = "Fail to capture screenshot.";
+        }
+        await page.close();
+        return msg;
+
+      } catch(error) {
+        logger.error(error);
+        return '出错了ww';
+      }
     } else {
-      return next()
+      return next();
     }
   })
 

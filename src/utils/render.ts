@@ -2,7 +2,8 @@ import { A2SResult } from '../types/a2s';
 import { secondFormat } from './timeFormat';
 
 //   normal : lite : text                                     themeBG : fontColor : themeInner : themeBorder
-export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000', '#F5F6F7', '#E5E7EB'], servCount: number, a2s: A2SResult[]):string {
+export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000', '#F5F6F7', '#E5E7EB'], a2s: A2SResult[]):string {
+  const servCount = a2s.length;
   if(style === 'normal') {
     let cellArrange;
     if ( servCount === 1 ) { cellArrange = 'auto' }
