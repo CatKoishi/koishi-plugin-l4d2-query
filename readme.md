@@ -17,6 +17,8 @@
 
 查询功能基于[wahaha216-a2s插件](https://github.com/wahaha216/koishi-plugin-a2s)
 
+支持QQ官方Bot
+
 本人纯编程白痴，只会Ctrl C/V，有bug请见谅qwq
 
 ## 📦 功能
@@ -50,6 +52,10 @@
 ---
 
 ## 📝 更新历史
+
+### 1.2.4
+
+- 使用组名+序号查询服务器信息
 
 ### 1.2.3
 

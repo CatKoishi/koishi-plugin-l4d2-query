@@ -2,7 +2,7 @@ import { A2SResult } from '../types/a2s';
 import { secondFormat } from './timeFormat';
 
 //   normal : lite : text                                     themeBG : fontColor : themeInner : themeBorder
-export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000', '#F5F6F7', '#E5E7EB'], index:number[], a2s: A2SResult[]):string {
+export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000', '#F5F6F7', '#E5E7EB'], groupName: string, a2s: A2SResult[]):string {
   const servCount = a2s.length;
   if(style === 'normal') {
     let cellArrange;
@@ -125,8 +125,8 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
 <div class="main">
 
     <div class="banner">
-        <span><b>已加载服务器</b></span>
-        <span>发送 "<b>服务器+序号</b>" 查看详情</span>
+        <span><b>组名：${groupName}</b></span>
+        <span>发送 "<b>组名+序号</b>" 查看详情</span>
     </div>
 
     <div class="roll">
@@ -156,7 +156,7 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
         html = html + `
     <div class="cell">
         <div class="cellinside">
-            <div class="servTitle">${index[i]+1}. ${a2s[i].info.name}</div>
+            <div class="servTitle">${i+1}. ${a2s[i].info.name}</div>
             <div class="servInfo">
                 <span>${player[0]}<br>${player[1]}<br>${player[2]}<br>${player[3]}</span>
             </div>
@@ -172,7 +172,7 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
         html = html + `
     <div class="cell">
         <div class="cellinside">
-            <div class="servTitle">${index[i]+1}. 无响应</div>
+            <div class="servTitle">${i+1}. 无响应</div>
             <div class="servInfo">
                 <span> <br> <br> <br> </span>
             </div>

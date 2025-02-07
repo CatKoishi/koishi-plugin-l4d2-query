@@ -138,7 +138,7 @@ export const Config: Schema<Config> = Schema.intersect([
     outputIP: Schema.boolean().default(true).description('查询服务器详情时是否输出服务器IP'),
     queryLimit: Schema.number().min(1).max(32).default(4).description('并发查询限制'),
     servList: Schema.array(Schema.object({
-      group: Schema.string(),
+      group: Schema.string().description('服务器分组名'),
       ip: Schema.string().default('8.8.8.8').description('服务器IP'),
       port: Schema.number().default(27015).min(0).max(65535).description('服务器端口'),
       rconPort: Schema.number().default(-1).min(-1).max(65535).description('RCON端口(-1关闭)'),
@@ -148,11 +148,11 @@ export const Config: Schema<Config> = Schema.intersect([
 
   Schema.object({
     useSearch: Schema.boolean().default(false).description('启用游戏查找功能'),
-  }).description('找服设置'),
+  }).description('找服设置(基于转发消息, QQ官方Bot慎用)'),
   Schema.union([
     Schema.object({
       useSearch: Schema.const(true).required(),
-      steamWebApi: Schema.string().required().description('Steam Web API'),
+      steamWebApi: Schema.string().required().description('点击[->此处<-](https://steamcommunity.com/dev/apikey)获取'),
       useProxy: Schema.union([
         Schema.const(false).description('直连'),
         Schema.string().default('http://1.1.1.1:7897').description('使用代理')
@@ -178,7 +178,7 @@ export const Config: Schema<Config> = Schema.intersect([
 
   Schema.object({
     useEvent: Schema.boolean().default(false).description('开启事件预约系统'),
-  }).description('事件系统')
+  }).description('事件系统(不支持QQ官方Bot)')
 
 
 ]);
@@ -602,28 +602,30 @@ export async function apply(ctx: Context, config: Config) {
   ctx.middleware( async (session, next) => {
     const input = session.content.replace(/(<|&lt;).+\/(>|&gt;)\s*/, '').replace(/\s*\/?\s*/, '').replace(/\s*$/, ''); // remove <at id="xxxxxx"/>  & prefix '/' & blank
 
-    if ( /服务器\s?[1-9]\d*$/.test(input) ) { // 服务器1 | 服务器 1
-      const maxServNum = config.servList.length;
-      const index = Number(/[1-9]\d*/.exec(input));
-      if( index <= maxServNum ) {
-        const { ip, port } = await convServerAddr(config.servList[index-1].ip);
-        const { code, info, players } = await queryServerInfo(ip, config.servList[index-1].port);
-        const output = servInfo2Text(code, info, players);
-        if(config.outputIP) {
-          output.children.push( h('p', `connect ${config.servList[index-1].ip}:${config.servList[index-1].port}`));
-        }
-        session.send( output );
-        return;
-      }
-    }
-
-    const group = groupList.find( group => group.groupName === input);
+    // input: 服务器 1 || 服务器1 || 狐雾器 1 || 服务器
+    const inputGroup = input.replace(/\s*\d*$/, '');
+    const inputNumber = /[1-9]\d*$/.exec(input);
+    const group = groupList.find( group => group.groupName === inputGroup);
 
     if( group ) {
       const maxServNum = group.servList.length;
 
-      if(!maxServNum) {
+      if( !maxServNum ) {
         return '此分组还没有订阅的服务器呢~';
+      }
+
+      if( inputNumber ) {
+        const index = Number(inputNumber);
+        if( index <= maxServNum ) {
+          const { ip, port } = await convServerAddr(group.servList[index-1].ip);
+          const { code, info, players } = await queryServerInfo(ip, group.servList[index-1].port);
+          const output = servInfo2Text(code, info, players);
+          if(config.outputIP) {
+            output.children.push( h('p', `connect ${group.servList[index-1].ip}:${group.servList[index-1].port}`));
+          }
+          session.send( output );
+          return;
+        }
       }
 
       try {
@@ -648,7 +650,7 @@ export async function apply(ctx: Context, config: Config) {
 
         const servIndex: number[] = [];
         group.servList.map( (info, index) => servIndex[index] = info.index);
-        const html = renderHtml(config.listStyle, theme, servIndex, a2s);
+        const html = renderHtml(config.listStyle, theme, group.groupName, a2s);
 
         if(config.listStyle === 'text') {
           const msg = h("figure");
