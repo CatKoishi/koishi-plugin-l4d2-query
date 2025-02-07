@@ -565,8 +565,11 @@ export async function apply(ctx: Context, config: Config) {
   /*****************************************************************************************************************/
 
   let groupList: SVGROUP[] = [{groupName:"服务器", servList:config.servList}];
+  groupList[0].servList.map( (info, index) => {
+    info.index = index;
+  })
 
-  config.servList.map( info => {
+  groupList[0].servList.map( info => {
     if ( info.group ) {
       const nickname = info.group.replace(/\s+/g, '');
       if ( nickname != "" ) {
@@ -598,7 +601,7 @@ export async function apply(ctx: Context, config: Config) {
   })
 
   ctx.middleware( async (session, next) => {
-    const input = session.content.replace(/<.+\/>\s+/, '');
+    const input = session.content.replace(/<.+\/>\s*/, '').replace(/\s*\/?\s*/, '').replace(/\s*$/, ''); // remove <at id="xxxxxx"/>  & prefix '/' & blank
     
     if ( /服务器\s?[1-9]\d*$/.test(input) ) { // 服务器1 | 服务器 1
       const maxServNum = config.servList.length;
