@@ -1,7 +1,6 @@
 import { Context, Schema, h, Logger } from 'koishi'
 
 import {} from 'koishi-plugin-puppeteer';
-import { Page } from 'puppeteer-core';
 import {} from '@cordisjs/plugin-proxy-agent'
 import {} from 'koishi-plugin-cron'
 
@@ -601,8 +600,8 @@ export async function apply(ctx: Context, config: Config) {
   })
 
   ctx.middleware( async (session, next) => {
-    const input = session.content.replace(/<.+\/>\s*/, '').replace(/\s*\/?\s*/, '').replace(/\s*$/, ''); // remove <at id="xxxxxx"/>  & prefix '/' & blank
-    
+    const input = session.content.replace(/(<|&lt;).+\/(>|&gt;)\s*/, '').replace(/\s*\/?\s*/, '').replace(/\s*$/, ''); // remove <at id="xxxxxx"/>  & prefix '/' & blank
+
     if ( /服务器\s?[1-9]\d*$/.test(input) ) { // 服务器1 | 服务器 1
       const maxServNum = config.servList.length;
       const index = Number(/[1-9]\d*/.exec(input));
@@ -647,7 +646,9 @@ export async function apply(ctx: Context, config: Config) {
           return await queryServerInfo(resolve.ip, group.servList[index].port, qPlayers);
         })));
 
-        const html = renderHtml(config.listStyle, theme, a2s)
+        const servIndex: number[] = [];
+        group.servList.map( (info, index) => servIndex[index] = info.index);
+        const html = renderHtml(config.listStyle, theme, servIndex, a2s);
 
         if(config.listStyle === 'text') {
           const msg = h("figure");

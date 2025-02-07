@@ -2,7 +2,7 @@ import { A2SResult } from '../types/a2s';
 import { secondFormat } from './timeFormat';
 
 //   normal : lite : text                                     themeBG : fontColor : themeInner : themeBorder
-export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000', '#F5F6F7', '#E5E7EB'], a2s: A2SResult[]):string {
+export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000', '#F5F6F7', '#E5E7EB'], index:number[], a2s: A2SResult[]):string {
   const servCount = a2s.length;
   if(style === 'normal') {
     let cellArrange;
@@ -44,7 +44,10 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
             flex-direction: row;
             justify-content: space-between;
             align-items: center;
-            padding: 10px;
+            padding-left: 10px;
+            padding-right: 10px;
+            padding-top: 5px;
+            padding-bottom: 5px;
             background-color: ${theme[2]};
             border: 2px solid ${theme[3]};
             border-radius: 0.5em;
@@ -55,8 +58,8 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
         .roll {
             display: grid;
             grid-template-columns: ${cellArrange};
-            row-gap: 20px;
-            column-gap: 20px;
+            row-gap: 10px;
+            column-gap: 10px;
             margin-bottom: 10px;
         }
 
@@ -153,7 +156,7 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
         html = html + `
     <div class="cell">
         <div class="cellinside">
-            <div class="servTitle">${i+1}. ${a2s[i].info.name}</div>
+            <div class="servTitle">${index[i]+1}. ${a2s[i].info.name}</div>
             <div class="servInfo">
                 <span>${player[0]}<br>${player[1]}<br>${player[2]}<br>${player[3]}</span>
             </div>
@@ -169,7 +172,7 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
         html = html + `
     <div class="cell">
         <div class="cellinside">
-            <div class="servTitle">${i+1}. 无响应</div>
+            <div class="servTitle">${index[i]+1}. 无响应</div>
             <div class="servInfo">
                 <span> <br> <br> <br> </span>
             </div>
