@@ -20,8 +20,6 @@ import { _Reservation, platformUser, platformUserList, platformGroup, initDataba
 export const name = 'l4d2-query'
 
 // ToDo
-// 服务器分组
-// 服务器显示多于4个人数的图片
 // 代码稳定性提升(缺少测试)
 // 制作VTF(长期)
 
@@ -92,6 +90,7 @@ export interface Config {
   queryLimit?: number,
   outputIP?: boolean,
   listStyle?: string,
+  maxShowPlayer?: number,
   servList?: SVINFO[],
 
   useSearch?: boolean,
@@ -135,6 +134,7 @@ export const Config: Schema<Config> = Schema.intersect([
 
   Schema.object({
     listStyle: Schema.union(['normal', 'lite', 'text']).default('normal').description('服务器列表输出样式'),
+    maxShowPlayer: Schema.number().min(2).max(16).default(4).description('服务器图片最大显示人数'),
     outputIP: Schema.boolean().default(true).description('查询服务器详情时是否输出服务器IP'),
     queryLimit: Schema.number().min(1).max(32).default(4).description('并发查询限制'),
     servList: Schema.array(Schema.object({
@@ -650,7 +650,7 @@ export async function apply(ctx: Context, config: Config) {
 
         const servIndex: number[] = [];
         group.servList.map( (info, index) => servIndex[index] = info.index);
-        const html = renderHtml(config.listStyle, theme, group.groupName, a2s);
+        const html = renderHtml(config.listStyle, theme, group.groupName, config.maxShowPlayer, a2s);
 
         if(config.listStyle === 'text') {
           const msg = h("figure");

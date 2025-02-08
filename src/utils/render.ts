@@ -2,7 +2,7 @@ import { A2SResult } from '../types/a2s';
 import { secondFormat } from './timeFormat';
 
 //   normal : lite : text                                     themeBG : fontColor : themeInner : themeBorder
-export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000', '#F5F6F7', '#E5E7EB'], groupName: string, a2s: A2SResult[]):string {
+export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000', '#F5F6F7', '#E5E7EB'], groupName: string, maxPlayer: number, a2s: A2SResult[]):string {
   const servCount = a2s.length;
   if(style === 'normal') {
     let cellArrange;
@@ -90,14 +90,14 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
         .servInfo {
             display: flex;
             flex-direction: row;
+            margin-top: 4px;
+            margin-bottom: 4px;
         }
 
         .servInfo span {
             line-height: 110%;
             font-size: 16px;
             color: rgb(55, 103, 55);
-            margin-top: 2px;
-            margin-bottom: 2px;
             white-space: pre-wrap;
         }
 
@@ -149,16 +149,33 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
     let player: string[] = [];
     for( let i=0; i<servCount; i++ ) {
       if( a2s[i].code === 0 ) {
-        for( let j=0; j<4; j++ ) {
+
+        let loop = 0;
+        const minPlayer = maxPlayer < 4? maxPlayer:4
+        if( a2s[i].players.length < minPlayer ) {
+          loop = minPlayer;
+        } else if ( a2s[i].players.length > maxPlayer ) {
+          loop = maxPlayer;
+        } else {
+          loop = a2s[i].players.length;
+        }
+
+        for( let j=0; j<loop; j++ ) {
           player[j] = (a2s[i].players[j] === undefined)? " ":`${a2s[i].players[j].name} | ${secondFormat(a2s[i].players[j].duration)}`
         }
+
+        let playerStr = '';
+        player.map( info => {
+          playerStr += '<br>' + info;
+        })
+        playerStr = playerStr.substring(4);
 
         html = html + `
     <div class="cell">
         <div class="cellinside">
             <div class="servTitle">${i+1}. ${a2s[i].info.name}</div>
             <div class="servInfo">
-                <span>${player[0]}<br>${player[1]}<br>${player[2]}<br>${player[3]}</span>
+                <span>${playerStr}</span>
             </div>
             <div class="servStatus">
                 <span style="color: #a9a9a9;">${a2s[i].info.players}/${a2s[i].info.max_players}</span>
@@ -168,7 +185,7 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
         </div>
     </div>
         `
-      } else {
+    } else {
         html = html + `
     <div class="cell">
         <div class="cellinside">
