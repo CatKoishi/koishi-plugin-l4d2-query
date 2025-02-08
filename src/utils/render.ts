@@ -81,8 +81,6 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
         }
 
         .servTitle {
-            display: flex;
-            flex-direction: row;
             font-size: 20px;
             line-height: 110%;
         }
@@ -146,10 +144,9 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
 </html>
   `
     let html = defaultHead;
-    let player: string[] = [];
     for( let i=0; i<servCount; i++ ) {
       if( a2s[i].code === 0 ) {
-
+        let player: string[] = [];
         let loop = 0;
         const minPlayer = maxPlayer < 4? maxPlayer:4
         if( a2s[i].players.length < minPlayer ) {
@@ -173,9 +170,11 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
         html = html + `
     <div class="cell">
         <div class="cellinside">
-            <div class="servTitle">${i+1}. ${a2s[i].info.name}</div>
-            <div class="servInfo">
-                <span>${playerStr}</span>
+            <div>
+                <div class="servTitle">${i+1}. ${a2s[i].info.name}</div>
+                <div class="servInfo">
+                    <span>${playerStr}</span>
+                </div>
             </div>
             <div class="servStatus">
                 <span style="color: #a9a9a9;">${a2s[i].info.players}/${a2s[i].info.max_players}</span>
@@ -189,9 +188,11 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
         html = html + `
     <div class="cell">
         <div class="cellinside">
-            <div class="servTitle">${i+1}. 无响应</div>
-            <div class="servInfo">
-                <span> <br> <br> <br> </span>
+            <div>
+                <div class="servTitle">${i+1}. 无响应</div>
+                <div class="servInfo">
+                    <span> <br> <br> <br> </span>
+                </div>
             </div>
             <div class="servStatus">
                 <span style="color: #a9a9a9;">0/0</span>
