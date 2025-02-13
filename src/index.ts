@@ -15,7 +15,7 @@ import Rcon from 'rcon-srcds';
 import { A2SResult, Info, Player, QueryServerInfo } from './types/a2s';
 import { renderHtml } from './utils/render'
 import { secondFormat, str2Time, timeFormat1 } from './utils/timeFormat';
-import { _Reservation, platformUser, platformUserList, platformGroup, initDatabase } from './database';
+import { _Reservation, platformUser, platformUserList, platformGroup, initDatabase, initGameReserveDB } from './database';
 
 export const name = 'l4d2-query'
 
@@ -198,9 +198,10 @@ export async function apply(ctx: Context, config: Config) {
   // ctx.server.all('/test', item => {
   //   item.body = 'hello koishi'
   // })
+  initDatabase(ctx);
 
   if(config.useEvent) {
-    initDatabase(ctx);
+    initGameReserveDB(ctx);
     // 主键 是否过期 事件名称 事件时间 事件发起人 最大参与者人数 事件参加者 替补参加者
     ctx.command('Event', '查看群事件预约说明')
 

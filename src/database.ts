@@ -43,7 +43,9 @@ export const initDatabase = (ctx: Context) => {
   ctx.model.extend('user', {
     steamid: { type: 'string' }
   })
+}
 
+export const initGameReserveDB = (ctx: Context) => {
   ctx.model.extend('gameReservation', {
     index: 'unsigned',
     isExpired: 'boolean',
