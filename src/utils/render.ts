@@ -145,27 +145,34 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
   `
     let html = defaultHead;
     for( let i=0; i<servCount; i++ ) {
-      if( a2s[i].infoErr === 0 ) {
+      if( (a2s[i].infoErr === 0) && a2s[i].info ) {
         let player: string[] = [];
-        let loop = 0;
-        const minPlayer = maxPlayer < 4? maxPlayer:4
-        if( a2s[i].players.length < minPlayer ) {
-          loop = minPlayer;
-        } else if ( a2s[i].players.length > maxPlayer ) {
-          loop = maxPlayer;
-        } else {
-          loop = a2s[i].players.length;
-        }
-
-        for( let j=0; j<loop; j++ ) {
-          player[j] = (a2s[i].players[j] === undefined)? " ":`${a2s[i].players[j].name} | ${secondFormat(a2s[i].players[j].timeOnline.raw)}`
-        }
-
         let playerStr = '';
-        player.map( info => {
-          playerStr += '<br>' + info;
-        })
-        playerStr = playerStr.substring(4);
+        
+        if( (a2s[i].playerErr === 0) && a2s[i].players ) {
+          let loop = 0;
+          const minPlayer = maxPlayer < 4? maxPlayer:4
+          if( a2s[i].players.length < minPlayer ) {
+            loop = minPlayer;
+          } else if ( a2s[i].players.length > maxPlayer ) {
+            loop = maxPlayer;
+          } else {
+            loop = a2s[i].players.length;
+          }
+
+          for( let j=0; j<loop; j++ ) {
+            player[j] = (a2s[i].players[j] === undefined)? " ":`${a2s[i].players[j].name} | ${secondFormat(a2s[i].players[j].timeOnline.raw)}`
+          }
+
+          player.map( info => {
+            playerStr += '<br>' + info;
+          })
+          playerStr = playerStr.substring(4);
+        } else {
+          playerStr = "玩家信息获取失败";
+        }
+        
+        
 
         html = html + `
     <div class="cell">
