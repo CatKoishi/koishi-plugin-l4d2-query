@@ -2,62 +2,54 @@ declare type Player = {
   index: number;
   name: string;
   score: number;
-  duration: number;
+  timeOnline: {
+    hours: number;
+    minutes: number;
+    seconds: number
+    raw: number;
+  };
 };
 
 declare type Info = {
-  header: String;
+  address: string;
   protocol: number;
+  goldSource: boolean;
   name: string;
   map: string;
   folder: string;
   game: "Left 4 Dead 2" | string;
-  id: number;
-  players: number;
-  max_players: number;
-  bots: number;
-  server_type: string;
-  environment: "l" | "w";
-  visibility: number;
-  vac: number;
+  appID: number;
+  players: {
+    online: number;
+    max: number;
+    bots: number;
+  };
+  type: string;
+  OS: string;
+  visibility: string;
+  VAC: boolean;
   version: string;
   port: number;
-  steamid: BigInt;
-  keywords: string;
-  gameid: BigInt;
+  steamID: BigInt;
+  keywords: string[];
+  gameID: number;
 };
+
+declare type Rule = {
+  l4d_ready_cfg_name: string;
+}
 
 export declare type A2SResult = {
-  code: number;
-  info: Info;
-  players: Player[];
-  errMsg: Error;
+  infoErr: number;
+  info: Info | null;
+  playerErr: number;
+  players: Player[] | null;
+  ruleErr: number;
+  rules: Rule | null;
 };
-
-declare module "source-server-query" {
-  export class SourceQuerySocket {
-    constructor();
-
-    async info(
-      address: string,
-      port: string | number,
-      timeout: number = 1000
-    ): Promise<Info>;
-
-    async players(
-      address: string,
-      port: string | number,
-      timeout: number = 1000
-    ): Promise<Player[]>;
-  }
-}
 
 export declare type QueryServerInfo = (
   ip: string,
-  port: string | number,
-  qPlayers: boolean = true
-) => Promise<
-  | { code: 0; info: Info; players: Player[]; errMsg: null }
-  | { code: 0; info: Info; players: null; errMsg: null }
-  | { code: 1; info: null; players: null; errMsg: Error }
->;
+  port: number,
+  allQuery: boolean = false
+) => Promise<A2SResult>;

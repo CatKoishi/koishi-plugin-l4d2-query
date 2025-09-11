@@ -145,7 +145,7 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
   `
     let html = defaultHead;
     for( let i=0; i<servCount; i++ ) {
-      if( a2s[i].code === 0 ) {
+      if( a2s[i].infoErr === 0 ) {
         let player: string[] = [];
         let loop = 0;
         const minPlayer = maxPlayer < 4? maxPlayer:4
@@ -158,7 +158,7 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
         }
 
         for( let j=0; j<loop; j++ ) {
-          player[j] = (a2s[i].players[j] === undefined)? " ":`${a2s[i].players[j].name} | ${secondFormat(a2s[i].players[j].duration)}`
+          player[j] = (a2s[i].players[j] === undefined)? " ":`${a2s[i].players[j].name} | ${secondFormat(a2s[i].players[j].timeOnline.raw)}`
         }
 
         let playerStr = '';
@@ -177,9 +177,9 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
                 </div>
             </div>
             <div class="servStatus">
-                <span style="color: #a9a9a9;">${a2s[i].info.players}/${a2s[i].info.max_players}</span>
+                <span style="color: #a9a9a9;">${a2s[i].info.players.online}/${a2s[i].info.players.max}</span>
                 <span style="color: rgb(25, 68, 161)">${a2s[i].info.map}</span>
-                <img src="${a2s[i].info.environment}.svg" style="width: 16px;">
+                <img src="${a2s[i].info.OS}.svg" style="width: 16px;">
             </div>
         </div>
     </div>
@@ -197,7 +197,7 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
             <div class="servStatus">
                 <span style="color: #a9a9a9;">0/0</span>
                 <span style="color: rgb(25, 68, 161)"> </span>
-                <img src="u.svg" style="width: 16px;">
+                <img src="unknown.svg" style="width: 16px;">
             </div>
         </div>
     </div>
@@ -305,13 +305,13 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
     `
     let html = head;
     for( let i=0; i<servCount; i++ ) {
-      if( a2s[i].code === 0 ) {
+      if( a2s[i].infoErr === 0 ) {
         html = html + `
     <div class="cell">
         <span class="index">${i+1}.</span>
         <span class="name">${a2s[i].info.name}</span>
         <span class="map">${a2s[i].info.map}</span>
-        <span class="player">${a2s[i].info.players}/${a2s[i].info.max_players}</span>
+        <span class="player">${a2s[i].info.players.online}/${a2s[i].info.players.max}</span>
     </div>
         `
       } else {
@@ -334,8 +334,8 @@ export function renderHtml(style: string, theme: string[] = ['#FFFFFF', '#000000
     let html = '';
 
     for( let i=0; i<servCount; i++ ) {
-      if( a2s[i].code === 0 ) {
-        html = html + `${i+1}服: ${a2s[i].info.name}\r\n地图: ${a2s[i].info.map}\r\n人数: ${a2s[i].info.players}/${a2s[i].info.max_players}\r\n\r\n`;
+      if( a2s[i].infoErr === 0 ) {
+        html = html + `${i+1}服: ${a2s[i].info.name}\r\n地图: ${a2s[i].info.map}\r\n人数: ${a2s[i].info.players.online}/${a2s[i].info.players.max}\r\n\r\n`;
       } else {
         html = html + `${i+1}服: 无响应\r\n\r\n`
       }

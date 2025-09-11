@@ -8,11 +8,11 @@ import { promises } from 'node:dns';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { SourceQuerySocket } from 'source-server-query';
+import * as a2s from '@fabricio-191/valve-server-query';
 import mysql from 'mysql2/promise';
 import Rcon from 'rcon-srcds';
 
-import { A2SResult, Info, Player, QueryServerInfo } from './types/a2s';
+import { A2SResult, QueryServerInfo } from './types/a2s';
 import { renderHtml } from './utils/render'
 import { secondFormat, str2Time, timeFormat1 } from './utils/timeFormat';
 import { _Reservation, platformUser, platformUserList, platformGroup, initDatabase, initGameReserveDB } from './database';
@@ -29,6 +29,8 @@ export const usage = `
 ## ⭐️求生之路群管理插件
 
 灵感源于[Agnes4m的求生之路插件](https://github.com/Agnes4m/nonebot_plugin_l4d2_server)和毛茸茸的Pure服插件, 基于[@wahaha216/a2s](https://github.com/wahaha216/koishi-plugin-a2s), 附加一些奇奇怪怪的小功能
+
+插件需要 puppeteer, cron, database 服务
 
 <details>
 <summary>查看详情</summary>
@@ -162,7 +164,7 @@ export const Config: Schema<Config> = Schema.intersect([
   ]).collapse(),
 
   Schema.object({
-    steamWebApi: Schema.string().required().description('点击[->此处<-](https://steamcommunity.com/dev/apikey)获取'),
+    steamWebApi: Schema.string().description('点击[->此处<-](https://steamcommunity.com/dev/apikey)获取'),
     useProxy: Schema.union([
       Schema.const(false).description('直连'),
       Schema.string().default('http://1.1.1.1:7897').description('使用代理')
@@ -583,8 +585,8 @@ export async function apply(ctx: Context, config: Config) {
     if(address === undefined)
       return '服务器地址未输入！'
     const { ip, port } = await convServerAddr(address);
-    const { code, info, players } = await queryServerInfo(ip, port);
-    session.send( servInfo2Text(code, info, players) );
+    const sv = await queryServerInfo(ip, port, true);
+    session.send( servInfo2Text(sv) );
   })
 
   groupList.map( group => {
@@ -855,59 +857,78 @@ export async function apply(ctx: Context, config: Config) {
   })
 }
 
+const queryServerInfo: QueryServerInfo = async (ip, port, allQuery = false) => {
 
-const queryServerInfo: QueryServerInfo = async (ip, port, qPlayers = true) => {
-  const query: SourceQuerySocket = new SourceQuerySocket();
-  let errMsg: Error;
-  const info = await query.info(ip, port).catch((err) => {
-    logger.error(err);
-    errMsg = err;
+  let result: A2SResult = {
+    infoErr: 1,
+    info: null,
+    playerErr: 1,
+    players: null,
+    ruleErr: 1,
+    rules: null,
+  };
+
+  return a2s.Server({
+    ip: ip,
+    port: port,
+    timeout: 1000
+  }).then( async sv => {
+    if( !allQuery ) {
+      result.info = await sv.getInfo().then(() => {result.infoErr = 0;}).catch( result.infoErr = 1 );
+    } else {
+      [ result.info, result.players, result.rules ] = await Promise.all([
+        sv.getInfo().then( info => {
+          result.infoErr = 0;
+          return info;
+        }).catch(e => { }),
+        
+        sv.getPlayers().then(players => {
+          result.playerErr = 0;
+          return players;
+        }).catch(e => { }),
+
+        sv.getRules().then(rules => {
+          result.ruleErr = 0;
+          return rules;
+        }).catch(e => { }),
+      ]);
+    }
+    return result;
+  }).catch( e => {
+    logger.error(e);
+    return result;
   });
-
-  let players: Player[] | void;
-  if (qPlayers && !errMsg) {
-    players = await query.players(ip, port).catch((err) => {
-      logger.error(err);
-      errMsg = err;
-    });
-  }
-
-  if (errMsg) {
-    return { code: 1, info: null, players: null, errMsg };
-  } else if (qPlayers) {
-    return {
-      code: 0,
-      info: info as Info,
-      players: players as Player[],
-      errMsg: null,
-    };
-  } else {
-    return {
-      code: 0,
-      info: info as Info,
-      players: null,
-      errMsg: null,
-    };
-  }
 };
 
 
-function servInfo2Text( code: number, info: Info, players: Player[] ):h {
+function servInfo2Text( sv: A2SResult ):h {
   let index:number;
   let servInfo: h;
-  if (code === 0) {
-    servInfo = h('message',
-      h('p', `名称:${info.name}`),
-      h('p', `游戏:${info.game}`),
-      h('p', `地图:${info.map}`),
-      h('p', `玩家:${info.players}/${info.max_players}`)
-    );
+  if( (sv.infoErr + sv.playerErr) == 2 ) {
+    return h.text("服务器无响应");
+  }
 
-    for(index = 0; index < info.players; index++) {
-      servInfo.children.push( h('p', `[${players[index].score}] | ${secondFormat(players[index].duration)} | ${players[index].name}`) );
+  if (sv.infoErr == 0) {
+    servInfo = h('message',
+      h('p', `名称:${sv.info.name}`),
+      h('p', `游戏:${sv.info.game}`),
+    );
+    if(sv.ruleErr == 0 && sv.rules.l4d_ready_cfg_name) {
+      servInfo.children.push( h('p', `模式:${sv.rules.l4d_ready_cfg_name}`) );
+    }
+    servInfo.children.push( h('p', `地图:${sv.info.map}`) );
+    servInfo.children.push( h('p', `玩家:${sv.info.players.online}/${sv.info.players.max}`) );
+
+  } else {
+    servInfo = h('message', h('p', '服务器信息获取失败'));
+  }
+
+  if( sv.playerErr == 0 ) {
+    for(index = 0; index < sv.info.players.online; index++) {
+      servInfo.children.push( h('p', `[${sv.players[index].score}] | ${secondFormat(sv.players[index].timeOnline.raw)} | ${sv.players[index].name}`) );
     }
   } else {
-    servInfo = h.text("服务器无响应");
+    servInfo.children.push( h('p', "服务器玩家获取失败") );
   }
   return servInfo;
 }
@@ -927,8 +948,8 @@ async function servInfo2Pic( ctx: Context, config: Config, group: SVGROUP, input
     const index = Math.round(inputNumber);
     if( index <= maxServNum && index > 0 ) {
       const { ip, port } = await convServerAddr(group.servList[index-1].ip);
-      const { code, info, players } = await queryServerInfo(ip, group.servList[index-1].port);
-      const output = servInfo2Text(code, info, players);
+      const sv = await queryServerInfo(ip, group.servList[index-1].port, true);
+      const output = servInfo2Text(sv);
       if(config.outputIP) {
         output.children.push( h('p', `connect ${group.servList[index-1].ip}:${group.servList[index-1].port}`));
       }
@@ -1029,5 +1050,4 @@ async function convServerAddr( url: string, noPort: boolean = false) {
   }
 
   return {ip, port};
-
 }
