@@ -874,7 +874,7 @@ const queryServerInfo: QueryServerInfo = async (ip, port, allQuery = false) => {
     timeout: 1000
   }).then( async sv => {
     if( !allQuery ) {
-      result.info = await sv.getInfo().then(() => {result.infoErr = 0;}).catch( result.infoErr = 1 );
+      result.info = await sv.getInfo().then(() => {result.infoErr = 0;}).catch(e => {});
     } else {
       [ result.info, result.players, result.rules ] = await Promise.all([
         sv.getInfo().then( info => {
@@ -893,6 +893,8 @@ const queryServerInfo: QueryServerInfo = async (ip, port, allQuery = false) => {
         }).catch(e => { }),
       ]);
     }
+    
+    sv.disconnect();
     return result;
   }).catch( e => {
     logger.error(e);
